@@ -1,9 +1,5 @@
 # Machine Party Mod Loader
 
-This lets you add mods to Machine Party — small extras like a debug console
-and an in-game chat box. You don't need to know how to code, and you don't
-need to install Godot or any other program. You just need one file.
-
 This page has two parts:
 
 - **Getting Started** (below) — for anyone who just wants to install mods.
@@ -19,7 +15,7 @@ as you hit the second part.
 
 ### Step 1 — Get the file
 
-You should have a file called `MachinePartyModLoader.exe`. If what you have
+Download `MachinePartyModLoader.exe`. If what you have
 is a `.zip` file instead, right-click it and choose **Extract All** first —
 you want the `.exe` file that comes out of it.
 
@@ -55,11 +51,6 @@ To get past it:
 
 1. Click the small text that says **More info**.
 2. A button labeled **Run anyway** will appear. Click it.
-
-Some antivirus programs may also flag it for the same reason (it's a small,
-unsigned tool, which looks suspicious to automated scanners even when it's
-harmless). If yours does, you'll need to allow it — check your antivirus's
-quarantine or notifications for an "allow" / "restore" option.
 
 ### Step 5 — Let it finish
 
@@ -101,12 +92,9 @@ Go back to the game's folder (Step 2). Double-click **`Uninstall Mods.bat`**
 it's about to remove and ask you to type `y` and press Enter to confirm.
 That puts the game back to how it was before, and removes the `mods` folder.
 
-No terminal, no typing commands — just double-click it, same as the loader
-itself.
-
 ### Optional: make it run automatically
 
-If you don't want to double-click the loader every time before you play:
+If you don't want to double-click the loader every update before you play:
 
 1. In Steam, right-click Machine Party → **Properties**.
 2. On the **General** tab, find the box labeled **Launch Options**.
@@ -117,9 +105,8 @@ If you don't want to double-click the loader every time before you play:
 "C:\path\to\Machine Party_Windows\MachinePartyModLoader.exe" %command%
 ```
 
-Now every time you hit Play in Steam, it checks/updates the mods for you
-first, then starts the game automatically — you'll never need to
-double-click it again, even after a game update.
+Now every time you hit Play in Steam, it checks/updates the mods and game for you
+first, then starts the game automatically.
 
 \---
 
@@ -140,10 +127,6 @@ quarantine list or an "allow this file" option.
 **Pressing `` ` `` does nothing.** Make sure you're actually in a match/lobby
 in-game, not sitting on the main menu. Also double check you're pressing the
 key next to **1**, not the apostrophe key elsewhere on the keyboard.
-
-**I ran the loader again after a game update and it says "already patched
-and up to date".** That's correct and expected — it means nothing needs to
-change. Your mods are untouched either way.
 
 **Something looks broken after uninstalling.** In Steam, right-click
 Machine Party → **Properties** → **Installed Files** → **Verify integrity of
