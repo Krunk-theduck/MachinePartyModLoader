@@ -1,0 +1,8 @@
+{
+  "id": "console",
+  "name": "Debug Console",
+  "version": "1.0.0",
+  "entry": "main.gd",
+  "priority": 0,
+  "requires": []
+}
