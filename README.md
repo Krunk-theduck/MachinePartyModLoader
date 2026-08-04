@@ -15,7 +15,7 @@ as you hit the second part.
 
 ### Step 1 — Get the file
 
-Download `MachinePartyModLoader.exe`. If what you have
+Download `MachinePartyModLoader.exe` from modloader releases. If what you have
 is a `.zip` file instead, right-click it and choose **Extract All** first —
 you want the `.exe` file that comes out of it.
 
