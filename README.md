@@ -90,7 +90,9 @@ console should pop up on screen. If it does, the loader is working.
 Go back to the game's folder (Step 2). Double-click **`Uninstall Mods.bat`**
 — it appeared there the first time you ran the loader. It will list what
 it's about to remove and ask you to type `y` and press Enter to confirm.
-That puts the game back to how it was before, and removes the `mods` folder.
+
+This removed the hook and mods, but NOT the loader or uninstaller files. 
+Manually delete those if you dont want them, they are not active anymore.
 
 ### Optional: make it run automatically
 
