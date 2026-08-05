@@ -2,11 +2,13 @@
 
 This page has two parts:
 
-- **Getting Started** (below) — for anyone who just wants to install mods.
-- **For Mod Authors & Developers** (way at the bottom) — for anyone who wants
-  to build the tool from source or write their own mod.
+- **Getting Started** (below) - for anyone who just wants to install mods.
 
-If you're not planning to write a mod yourself, you can stop reading as soon
+- **For Mod Authors & Developers** (way at the bottom) - for nerds who want
+to either confirm the safety, or the use of AI in this project (hang off, 
+almost the entire loader was made with AI)
+
+If you're not planning to write a mod or complain, you can stop reading as soon
 as you hit the second part.
 
 \---
@@ -16,8 +18,8 @@ as you hit the second part.
 ### Step 1 — Get the file
 
 Download `MachinePartyModLoader.exe` from modloader releases. If what you have
-is a `.zip` file instead, right-click it and choose **Extract All** first —
-you want the `.exe` file that comes out of it.
+is a `.zip` file instead, right-click it and choose **Extract All** first -
+you want the `.exe` file not a zip.
 
 ### Step 2 — Find your Machine Party folder
 
@@ -25,19 +27,14 @@ you want the `.exe` file that comes out of it.
 2. In your **Library**, find Machine Party and right-click it.
 3. Click **Manage**, then click **Browse local files**.
 4. A File Explorer window will pop up.
-5. Inside it, look for another folder — its name will have "Windows" in it,
-   something like `Machine Party_Windows`. Open that folder too.
+5. Inside it, look for another folder - `Machine Party_Windows`. Open that folder too.
 6. You should now see files named `Machine Party.exe` and
-   `Machine Party.pck`. **This is the folder you need** — keep this window
+   `Machine Party.pck`. **This is the folder you need** - keep this window
    open, you'll use it for every step below.
-
-If you don't see a `Machine Party_Windows` folder and instead see
-`Machine Party.exe` directly, that's fine too — you're already in the right
-place.
 
 ### Step 3 — Put the loader in that folder
 
-Drag `MachinePartyModLoader.exe` into the File Explorer window from Step 2,
+Drag `MachinePartyModLoader.exe` into the File Explorer window open to Machine Party,
 so it sits next to `Machine Party.exe` and `Machine Party.pck`.
 
 ### Step 4 — Run it
@@ -45,8 +42,9 @@ so it sits next to `Machine Party.exe` and `Machine Party.pck`.
 Double-click `MachinePartyModLoader.exe`.
 
 Windows will very likely show a blue box titled **"Windows protected your
-PC"**. This is completely normal — it happens for any program that wasn't
+PC"**. This is fine - it happens for any program that wasn't
 bought from the Microsoft Store, not because anything is actually wrong.
+
 To get past it:
 
 1. Click the small text that says **More info**.
@@ -65,25 +63,25 @@ Press Enter, or just close the window.
 
 ### Step 6 — Install a mod (optional)
 
-Look in the game's folder again (the one from Step 2). There's now a new
+Look in the game's folder again (the one from Step 2). There's now a
 folder in there called `mods`. To install a mod someone gives you, put its
 folder inside `mods`.
 
-There's already one folder in there called `console` — that came bundled
+There's already one folder in there called `console` which came bundled
 with the loader itself, as a working example. You don't need to do anything
 with it; it's just there so you can peek inside and see what a mod looks
-like.
+like, or view what mods you have installed from inside the game.
 
 ### Step 7 — Play
 
-Start Machine Party from Steam exactly like you always have. Nothing about
-that changes.
+Start Machine Party from Steam/File explorer (if you sail the seas) exactly like you always have.
 
 ### How do you know it worked?
 
 Once you're in the game, press the `` ` `` key — that's the small squiggly
 key, usually just above **Tab** and to the left of the **1** key. A debug
-console should pop up on screen. If it does, the loader is working.
+console should pop up on screen. If it does, the loader is working, escape 
+or ` again should close the console.
 
 ### Uninstalling
 
@@ -94,7 +92,7 @@ it's about to remove and ask you to type `y` and press Enter to confirm.
 This removed the hook and mods, but NOT the loader or uninstaller files. 
 Manually delete those if you dont want them, they are not active anymore.
 
-### Optional: make it run automatically
+### Optional: make it update with the game
 
 If you don't want to double-click the loader every update before you play:
 
@@ -112,32 +110,6 @@ first, then starts the game automatically.
 
 \---
 
-## Frequently Asked Questions
-
-**It says "no .pck found".** You put `MachinePartyModLoader.exe` in the
-wrong folder — go back to Step 2 and make sure you're in the same folder as
-`Machine Party.exe` and `Machine Party.pck`.
-
-**I don't see a "Run anyway" button.** Make sure you clicked **More info**
-first — the button only appears after that.
-
-**My antivirus deleted it / won't let me run it.** This is a false positive
-— unsigned tools like this one commonly get flagged even when there's
-nothing wrong with them. You'll need to check your antivirus program for a
-quarantine list or an "allow this file" option.
-
-**Pressing `` ` `` does nothing.** Make sure you're actually in a match/lobby
-in-game, not sitting on the main menu. Also double check you're pressing the
-key next to **1**, not the apostrophe key elsewhere on the keyboard.
-
-**Something looks broken after uninstalling.** In Steam, right-click
-Machine Party → **Properties** → **Installed Files** → **Verify integrity of
-game files**. This asks Steam to check every game file against the original
-and re-download anything that doesn't match. The uninstaller normally does
-this for you automatically as a last resort, but it's always safe to run it
-yourself too.
-
-\---
 \---
 
 # For Mod Authors & Developers
@@ -145,6 +117,8 @@ yourself too.
 Everything below this line assumes you're comfortable with a terminal,
 Python, and/or GDScript. If you just wanted to play with mods installed,
 you're done — everything you need was above.
+
+Also this entire section of the readme was fully ai generated, enjoy nerds.
 
 ## How it works (the whole idea in four lines)
 
