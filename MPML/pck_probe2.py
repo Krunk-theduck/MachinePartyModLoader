@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-pck_probe2.py — dump and decode the trailing file index of a format-3 .pck.
-
-Usage:  python pck_probe2.py "Machine Party.pck"
-
-Read only. Never writes. Paste the whole output back.
-"""
 
 import struct
 import sys
@@ -16,7 +8,6 @@ OFF_FILE_BASE = 24
 OFF_DIR_OFFSET = 32
 MAX_ENTRIES = 400_000
 
-
 def hexdump(b, base=0, width=16):
     out = []
     for i in range(0, len(b), width):
@@ -26,15 +17,13 @@ def hexdump(b, base=0, width=16):
         out.append(f"  {base+i:08x}  {hx}  |{asc}|")
     return "\n".join(out)
 
-
 def printable_ratio(b):
     if not b:
         return 0.0
     return sum(1 for x in b if 32 <= x < 127 or x == 0) / len(b)
 
-
 def walk(region, start, filesize, file_base, rel, has_flags, require_res):
-    """Walk an entry chain. Return info if it lands exactly on the end."""
+
     pos = start
     n = 0
     paths = []
@@ -61,7 +50,7 @@ def walk(region, start, filesize, file_base, rel, has_flags, require_res):
         if require_res and not p.startswith("res://"):
             return None
         off, size = struct.unpack_from("<QQ", region, pos)
-        pos += 32  # offset+size+md5
+        pos += 32
         if has_flags:
             pos += 4
         abs_off = off + (file_base if rel else 0)
@@ -74,7 +63,6 @@ def walk(region, start, filesize, file_base, rel, has_flags, require_res):
             return {"count": n, "paths": paths, "start": start,
                     "has_flags": has_flags, "require_res": require_res}
     return None
-
 
 def main():
     pck = Path(sys.argv[1]) if len(sys.argv) > 1 else next(
@@ -155,6 +143,5 @@ def main():
         print("  first paths:")
         for p in r["paths"]:
             print(f"    {p}")
-
 
 main()

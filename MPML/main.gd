@@ -10,19 +10,12 @@ var _open := false
 var _prev_mouse_mode := Input.MOUSE_MODE_VISIBLE
 
 
-# Runs before any game code. Do script overrides here.
 func _mod_init(loader) -> void:
 	_loader = loader
 	loader.note("console mod init")
 
-	# Example: replace a vanilla script.
-	# override.gd must begin with:  extends "res://scripts/whatever.gd"
-	#
-	# loader.override_script_rel("console",
-	#     "res://scripts/whatever.gd", "override.gd")
 
 
-# Scene tree is alive here. Safe to touch nodes.
 func _mod_ready(loader) -> void:
 	loader.note("console mod ready")
 	_build_ui()
@@ -60,10 +53,6 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	margin.add_child(vbox)
 
-	# RichTextLabel does its own internal scrolling here (rather than sitting
-	# inside a ScrollContainer) so scroll-to-bottom can happen synchronously
-	# via scroll_to_line() right after appending text, instead of waiting on
-	# an external Container to recompute its layout a frame later.
 	_log = RichTextLabel.new()
 	_log.bbcode_enabled = true
 	_log.scroll_active = true

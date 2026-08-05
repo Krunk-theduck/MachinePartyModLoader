@@ -1,25 +1,3 @@
-#!/usr/bin/env python3
-"""
-Machine Party external mod loader — installer / launcher.
-
-Injects a bootstrap script into the game's .pck and registers it as the first
-autoload. Idempotent: run it every launch. When a game update replaces the
-.pck, the next run silently re-applies the patch.
-
-Supports Godot pack format 2 (index after header) and format 3 (index at end
-of file, Godot 4.5+). On format 3 the patch is append-only: new data and a new
-index are written past the current end of file, then a single 8-byte header
-field is flipped to point at them. Nothing existing is ever overwritten, so a
-failure mid-write leaves the original file still valid.
-
-Usage
------
-  python modloader_patch.py                   # patch whatever is next to this file
-  python modloader_patch.py --play            # patch, then launch the game
-  python modloader_patch.py --restore         # undo
-  python modloader_patch.py -- <command...>   # patch, then run <command>
-                                              # (the Steam %command% form)
-"""
 
 from __future__ import annotations
 
@@ -36,8 +14,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-# ---------------------------------------------------------------- constants
-
 PCK_MAGIC = b"GDPC"
 PACK_DIR_ENCRYPTED = 1 << 0
 PACK_REL_FILEBASE = 1 << 1
@@ -46,8 +22,8 @@ OFF_FORMAT = 4
 OFF_VERSION = 8
 OFF_FLAGS = 20
 OFF_FILE_BASE = 24
-OFF_DIR_OFFSET = 32          # format 3 only
-V2_INDEX_START = 100         # format 2: header is exactly 100 bytes
+OFF_DIR_OFFSET = 32
+V2_INDEX_START = 100
 
 LOADER_VERSION = "2"
 BOOTSTRAP_RES = "res://modloader/bootstrap.gd"
@@ -58,25 +34,19 @@ PROJECT_BINARY = "res://project.binary"
 
 CHUNK = 1 << 20
 
-
-# ---------------------------------------------------------------- pck
-
-
 class Entry:
     __slots__ = ("path", "offset", "size", "md5", "flags", "data")
 
     def __init__(self, path, offset, size, md5, flags, data=None):
         self.path = path
-        self.offset = offset      # always stored ABSOLUTE in memory
+        self.offset = offset
         self.size = size
         self.md5 = md5
         self.flags = flags
         self.data = data
 
-
 def pad4(b: bytes) -> bytes:
     return b + b"\x00" * ((4 - len(b) % 4) % 4)
-
 
 class Pck:
     def __init__(self, path: Path):
@@ -88,13 +58,11 @@ class Pck:
         self.flags = 0
         self.file_base = 0
         self.dir_offset = 0
-        self.dir_field = None     # header byte offset holding dir_offset (fmt 3)
-        self.dir_field_base = 0   # value stored there is (dir_offset - this)
+        self.dir_field = None
+        self.dir_field_base = 0
         self.dir_has_count = True
-        self.res_prefix = True    # do stored paths start with "res://"?
+        self.res_prefix = True
         self._read()
-
-    # -------------------------------------------------- reading
 
     @property
     def rel(self) -> bool:
@@ -138,7 +106,7 @@ class Pck:
                 self.res_prefix = self.entries[0].path.startswith("res://")
 
     def _locate_directory_v3(self, f, head):
-        """Find the index. Prefer the documented field, fall back to a scan."""
+
         cands = []
         for field in [OFF_DIR_OFFSET] + list(range(24, 112, 8)):
             if field + 8 > len(head) or field in (c[0] for c in cands):
@@ -165,7 +133,7 @@ class Pck:
         )
 
     def _parse_directory(self, f, start, has_count):
-        """Parse an index. Returns entries, or None if it doesn't validate."""
+
         f.seek(start)
         region = f.read(self.filesize - start)
         pos = 0
@@ -212,12 +180,10 @@ class Pck:
 
         if not entries:
             return None
-        # For a trailing index (fmt 3) it must consume the region exactly.
+
         if self.fmt >= 3 and pos != len(region):
             return None
         return entries
-
-    # -------------------------------------------------- accessors
 
     def get(self, res_path):
         res_path = self.norm(res_path)
@@ -247,8 +213,6 @@ class Pck:
             e.size = len(data)
         e.md5 = hashlib.md5(data).digest()
 
-    # -------------------------------------------------- index encoding
-
     def _encode_index(self, entries) -> bytes:
         out = bytearray()
         if self.dir_has_count or self.fmt < 3:
@@ -263,11 +227,8 @@ class Pck:
                 out += struct.pack("<I", e.flags)
         return bytes(out)
 
-    # -------------------------------------------------- writing
-
     def append_patch_v3(self):
-        """Append new/changed file data and a fresh index past current EOF,
-        then flip the header pointer. Existing bytes are never overwritten."""
+
         pending = [e for e in self.entries if e.data is not None]
         with open(self.path, "r+b") as f:
             f.seek(0, os.SEEK_END)
@@ -325,10 +286,6 @@ class Pck:
                         out.write(buf)
                         left -= len(buf)
 
-
-# ---------------------------------------------------------------- ECFG
-
-
 def ecfg_parse(data: bytes):
     if data[:4] != b"ECFG":
         die("project.binary has a bad header.")
@@ -347,7 +304,6 @@ def ecfg_parse(data: bytes):
         off += vlen
     return out
 
-
 def ecfg_build(entries):
     out = bytearray(b"ECFG") + struct.pack("<I", len(entries))
     for key, val in entries:
@@ -356,12 +312,10 @@ def ecfg_build(entries):
         out += struct.pack("<I", len(val)) + val
     return bytes(out)
 
-
 def enc_string(s: str) -> bytes:
     b = s.encode("utf-8")
     out = struct.pack("<I", 4) + struct.pack("<I", len(b)) + b
     return out + b"\x00" * ((4 - len(out) % 4) % 4)
-
 
 def dec_string(v: bytes):
     if len(v) < 8:
@@ -372,13 +326,8 @@ def dec_string(v: bytes):
     (length,) = struct.unpack_from("<I", v, 4)
     return v[8 : 8 + length].decode("utf-8", "replace")
 
-
-# ---------------------------------------------------------------- user dir
-
-
 def sanitize(name: str) -> str:
     return re.sub(r'[:/\\?*"|%<>]', "-", name).strip() or "Godot Project"
-
 
 def user_data_dir(settings):
     name = sanitize(settings.get("application/config/name", "Godot Project"))
@@ -395,13 +344,8 @@ def user_data_dir(settings):
         return base / sanitize(custom)
     return base / "Godot" / "app_userdata" / name
 
-
-# ---------------------------------------------------------------- undo record
-
-
 def sidecar_path(pck: Path) -> Path:
     return pck.with_name(pck.name + ".modloader.json")
-
 
 def save_undo(pck: Path, vanilla_dir_offset, vanilla_size, dir_field, dir_field_base):
     sidecar_path(pck).write_text(
@@ -419,7 +363,6 @@ def save_undo(pck: Path, vanilla_dir_offset, vanilla_size, dir_field, dir_field_
         encoding="utf-8",
     )
 
-
 def load_undo(pck: Path):
     sc = sidecar_path(pck)
     if not sc.is_file():
@@ -429,9 +372,8 @@ def load_undo(pck: Path):
     except Exception:
         return None
     if d.get("patched_size") != pck.stat().st_size:
-        return None  # stale — the game updated underneath us
+        return None
     return d
-
 
 def apply_undo(pck: Path, undo) -> bool:
     with open(pck, "r+b") as f:
@@ -442,10 +384,6 @@ def apply_undo(pck: Path, undo) -> bool:
         os.fsync(f.fileno())
     sidecar_path(pck).unlink(missing_ok=True)
     return True
-
-
-# ---------------------------------------------------------------- patching
-
 
 def patch(pck_path: Path, bootstrap_src: str, force=False):
     p = Pck(pck_path)
@@ -461,7 +399,6 @@ def patch(pck_path: Path, bootstrap_src: str, force=False):
         say("already patched and up to date — nothing to do")
         return p, False
 
-    # If we patched before, roll back first so we don't stack appends.
     undo = load_undo(pck_path)
     if undo and stamp is not None:
         say("rolling back previous patch before re-applying")
@@ -514,7 +451,6 @@ def patch(pck_path: Path, bootstrap_src: str, force=False):
     say(f"patched and verified ({len(check.entries):,} files)")
     return check, True
 
-
 EXAMPLE_MOD_JSON = """{
   "id": "console",
   "name": "Debug Console",
@@ -536,25 +472,15 @@ var _input: LineEdit
 var _open := false
 var _prev_mouse_mode := Input.MOUSE_MODE_VISIBLE
 
-
-# Runs before any game code. Do script overrides here.
 func _mod_init(loader) -> void:
 	_loader = loader
 	loader.note("console mod init")
 
-	# Example: replace a vanilla script.
-	# override.gd must begin with:  extends "res://scripts/whatever.gd"
-	#
-	# loader.override_script_rel("console",
-	#     "res://scripts/whatever.gd", "override.gd")
 
-
-# Scene tree is alive here. Safe to touch nodes.
 func _mod_ready(loader) -> void:
 	loader.note("console mod ready")
 	_build_ui()
 	_print("debug console ready — press ~ to toggle, 'help' for commands")
-
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -587,10 +513,6 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	margin.add_child(vbox)
 
-	# RichTextLabel does its own internal scrolling here (rather than sitting
-	# inside a ScrollContainer) so scroll-to-bottom can happen synchronously
-	# via scroll_to_line() right after appending text, instead of waiting on
-	# an external Container to recompute its layout a frame later.
 	_log = RichTextLabel.new()
 	_log.bbcode_enabled = true
 	_log.scroll_active = true
@@ -605,7 +527,6 @@ func _build_ui() -> void:
 	_input.text_submitted.connect(_on_submit)
 	vbox.add_child(_input)
 
-
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == TOGGLE_KEY:
 		_toggle()
@@ -614,7 +535,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _open and event.is_action_pressed("ui_cancel"):
 		_toggle()
 		get_viewport().set_input_as_handled()
-
 
 func _toggle() -> void:
 	_open = not _open
@@ -627,7 +547,6 @@ func _toggle() -> void:
 		Input.mouse_mode = _prev_mouse_mode
 		_input.release_focus()
 
-
 func _on_submit(text: String) -> void:
 	text = text.strip_edges()
 	_input.text = ""
@@ -635,7 +554,6 @@ func _on_submit(text: String) -> void:
 		_print("> " + text)
 		_run(text)
 	_input.grab_focus()
-
 
 func _run(line: String) -> void:
 	var parts := line.split(" ", false)
@@ -665,12 +583,10 @@ func _run(line: String) -> void:
 		_:
 			_print("unknown command: " + cmd)
 
-
 func _print(line: String) -> void:
 	_log.append_text(line + "\\n")
 	_log.scroll_to_line(_log.get_line_count())
 '''
-
 
 def install_example(mods_dir: Path):
     target = mods_dir / "console"
@@ -681,7 +597,6 @@ def install_example(mods_dir: Path):
     (target / "main.gd").write_text(EXAMPLE_MOD_GD, encoding="utf-8")
     say(f"wrote example mod -> {target}")
 
-
 def migrate_mods(old_dir: Path, new_dir: Path):
     """Move mods from the pre-2.x user:// location into the new folder
     beside the game, the first time the new folder doesn't exist yet."""
@@ -691,7 +606,6 @@ def migrate_mods(old_dir: Path, new_dir: Path):
         return
     say(f"moving existing mods {old_dir} -> {new_dir}")
     shutil.move(str(old_dir), str(new_dir))
-
 
 def install_uninstaller(folder: Path):
     """Drop a double-clickable uninstaller next to the exe, so removing mods
@@ -708,13 +622,8 @@ def install_uninstaller(folder: Path):
     )
     say(f"wrote uninstaller -> {bat_path.name}")
 
-
-# ---------------------------------------------------------------- helpers
-
-
 def say(msg):
     print(f"  {msg}")
-
 
 def die(msg):
     print(f"\nERROR: {msg}\n", file=sys.stderr)
@@ -724,7 +633,6 @@ def die(msg):
         except (EOFError, OSError):
             pass
     sys.exit(1)
-
 
 def find_steam_appid(pck_path: Path):
     """Best-effort: walk up from the pck to steamapps/appmanifest_*.acf and
@@ -749,7 +657,6 @@ def find_steam_appid(pck_path: Path):
                     return m.group(1)
     return None
 
-
 def request_steam_verify(appid: str) -> bool:
     if platform.system() != "Windows":
         return False
@@ -758,7 +665,6 @@ def request_steam_verify(appid: str) -> bool:
         return True
     except OSError:
         return False
-
 
 def find_beside(root: Path):
     pcks = sorted(root.glob("*.pck"))
@@ -769,7 +675,6 @@ def find_beside(root: Path):
         and "modloader" not in p.name.lower()
     ]
     return (pcks[0] if pcks else None), (exes[0] if exes else None)
-
 
 def is_process_running(exe_name: str) -> bool:
     if platform.system() != "Windows":
@@ -783,10 +688,6 @@ def is_process_running(exe_name: str) -> bool:
     except Exception:
         return False
     return exe_name.lower() in out.lower()
-
-
-# ---------------------------------------------------------------- uninstall
-
 
 def do_uninstall(pck_path: Path, skip_confirm: bool):
     say("preparing to uninstall")
@@ -803,7 +704,7 @@ def do_uninstall(pck_path: Path, skip_confirm: bool):
                 if s is not None:
                     settings[k] = s
             user_root = user_data_dir(settings)
-            mods_dirs.append(user_root / "mods")  # pre-2.x location
+            mods_dirs.append(user_root / "mods")
             log_file = user_root / "modloader.log"
     except SystemExit:
         pass
@@ -813,10 +714,6 @@ def do_uninstall(pck_path: Path, skip_confirm: bool):
     backup = pck_path.with_suffix(pck_path.suffix + ".vanilla")
     sc = sidecar_path(pck_path)
 
-    # No local undo record or backup? Only a problem if the pck is actually
-    # still patched — check, and if so fall back to asking Steam to verify
-    # and re-download the original, since that's the only remaining way to
-    # get back to unmodified bytes.
     still_patched = False
     appid = None
     if not undo and not backup.is_file():
@@ -909,10 +806,6 @@ def do_uninstall(pck_path: Path, skip_confirm: bool):
     say("if you set a Steam launch option pointing at this tool, remove it "
         "from the game's Properties too")
 
-
-# ---------------------------------------------------------------- main
-
-
 def main():
     ap = argparse.ArgumentParser(add_help=True)
     ap.add_argument("--pck", type=Path)
@@ -986,9 +879,6 @@ def main():
         if s is not None:
             settings[k] = s
 
-    # Mods live beside the game now, not in user:// — a Steam update or
-    # "verify integrity" only touches files it knows about, so a folder we
-    # add ourselves next to the exe survives it, and it's easier to find.
     mods_dir = pck_path.parent / "mods"
     migrate_mods(user_data_dir(settings) / "mods", mods_dir)
     mods_dir.mkdir(parents=True, exist_ok=True)
@@ -1014,23 +904,19 @@ def main():
             return
     print()
 
-
 BOOTSTRAP = r"""extends Node
 
-## Machine Party external mod loader — injected bootstrap.
-## Runs as the FIRST autoload, before any game script is instantiated.
-## Mods are plain .gd files in a folder outside the game install.
 
-const LOADER_VERSION := "1"
+const LOADER_VERSION := "2"
 const API_VERSION := 1
 
 var mods_root: String = ""
-var mods: Array = []              # active mods, in load order
+var mods: Array = []
 var _by_id: Dictionary = {}
 var _log: PackedStringArray = PackedStringArray()
 
+var _kept_overrides: Array[GDScript] = []
 
-# ---------------------------------------------------------------- boot
 
 func _init() -> void:
 	mods_root = _resolve_mods_root()
@@ -1038,7 +924,6 @@ func _init() -> void:
 	note("mods root: " + mods_root)
 	_discover()
 	_start_mods()
-
 
 func _ready() -> void:
 	name = "ModLoader"
@@ -1052,10 +937,7 @@ func _ready() -> void:
 			n.call("_mod_ready", self)
 	_flush_log()
 
-
 func _resolve_mods_root() -> String:
-	# user:// is the update-safe location. A mods/ folder next to the exe
-	# wins if it exists, for portable installs.
 	var exe_dir := OS.get_executable_path().get_base_dir()
 	var beside := exe_dir.path_join("mods")
 	if DirAccess.dir_exists_absolute(beside):
@@ -1063,8 +945,6 @@ func _resolve_mods_root() -> String:
 	DirAccess.make_dir_recursive_absolute("user://mods")
 	return "user://mods"
 
-
-# ---------------------------------------------------------------- discovery
 
 func _discover() -> void:
 	var d := DirAccess.open(mods_root)
@@ -1105,7 +985,6 @@ func _discover() -> void:
 		return a["priority"] < b["priority"])
 	mods = found
 
-
 func _start_mods() -> void:
 	var present := {}
 	for m in mods:
@@ -1139,9 +1018,6 @@ func _start_mods() -> void:
 	mods = active
 
 
-# ---------------------------------------------------------------- mod API
-
-## Compile a loose .gd file from disk into a usable GDScript.
 func compile(path: String) -> GDScript:
 	if not FileAccess.file_exists(path):
 		note("missing script: " + path)
@@ -1157,11 +1033,6 @@ func compile(path: String) -> GDScript:
 		return null
 	return s
 
-
-## Replace a vanilla game script with a mod script.
-## The mod script MUST start with:  extends "res://path/to/vanilla.gd"
-## Every later load() of that res:// path returns the mod version instead,
-## so multiple mods chain rather than clobbering each other.
 func override_script(vanilla_path: String, mod_script_path: String) -> GDScript:
 	if not ResourceLoader.exists(vanilla_path):
 		note("no vanilla script at " + vanilla_path)
@@ -1170,27 +1041,23 @@ func override_script(vanilla_path: String, mod_script_path: String) -> GDScript:
 	if s == null:
 		return null
 	s.take_over_path(vanilla_path)
+	_kept_overrides.append(s)
 	note("override %s <- %s" % [vanilla_path, mod_script_path])
 	return s
 
-
-## Convenience: override using a path relative to a mod's own folder.
 func override_script_rel(mod_id: String, vanilla_path: String, rel: String) -> GDScript:
 	var d := dir_of(mod_id)
 	if d.is_empty():
 		return null
 	return override_script(vanilla_path, d.path_join(rel))
 
-
 func dir_of(mod_id: String) -> String:
 	if _by_id.has(mod_id):
 		return str(_by_id[mod_id]["dir"])
 	return ""
 
-
 func has_mod(mod_id: String) -> bool:
 	return _by_id.has(mod_id)
-
 
 func mod_list() -> Array:
 	var out: Array = []
@@ -1198,16 +1065,13 @@ func mod_list() -> Array:
 		out.append("%s v%s" % [m["id"], m["version"]])
 	return out
 
-
 func open_mods_folder() -> void:
 	OS.shell_open(ProjectSettings.globalize_path(mods_root))
-
 
 func note(msg: String) -> void:
 	var line := "[modloader] " + msg
 	print(line)
 	_log.append(line)
-
 
 func _flush_log() -> void:
 	var f := FileAccess.open("user://modloader.log", FileAccess.WRITE)
@@ -1215,7 +1079,6 @@ func _flush_log() -> void:
 		f.store_string("\n".join(_log))
 		f.close()
 """
-
 
 if __name__ == "__main__":
     main()

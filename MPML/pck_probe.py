@@ -1,20 +1,10 @@
-#!/usr/bin/env python3
-"""
-pck_probe.py — figure out the exact header layout of a Godot .pck.
-
-Usage:  python pck_probe.py "Machine Party.pck"
-        python pck_probe.py            (auto-finds a .pck next to this file)
-
-Reads only. Never writes. Paste the whole output back.
-"""
 
 import struct
 import sys
 from pathlib import Path
 
-MAX_SCAN = 512          # how far into the header to look for file_count
-SAMPLE_ENTRIES = 2000   # validate at most this many entries per candidate
-
+MAX_SCAN = 512
+SAMPLE_ENTRIES = 2000
 
 def hexdump(b, base=0, width=16):
     out = []
@@ -25,9 +15,8 @@ def hexdump(b, base=0, width=16):
         out.append(f"  {base+i:04x}  {hx}  |{asc}|")
     return "\n".join(out)
 
-
 def try_layout(buf, filesize, count_off, extra_after_md5, pad_path):
-    """Walk the entry table under one candidate layout. Return info or None."""
+
     if count_off + 4 > len(buf):
         return None
     (count,) = struct.unpack_from("<I", buf, count_off)
@@ -59,7 +48,7 @@ def try_layout(buf, filesize, count_off, extra_after_md5, pad_path):
             return None
         off, size = struct.unpack_from("<QQ", buf, pos)
         pos += 16
-        pos += 16  # md5
+        pos += 16
         pos += extra_after_md5
         if size > filesize or off > filesize:
             return None
@@ -78,7 +67,6 @@ def try_layout(buf, filesize, count_off, extra_after_md5, pad_path):
         "max_off_end": max(offsets),
     }
 
-
 def main():
     if len(sys.argv) > 1:
         pck = Path(sys.argv[1])
@@ -90,7 +78,7 @@ def main():
         pck = found[0]
 
     filesize = pck.stat().st_size
-    # Entry tables can be large; read generously.
+
     with open(pck, "rb") as f:
         buf = f.read(min(filesize, 64 * 1024 * 1024))
 
@@ -141,6 +129,5 @@ def main():
             print(f"    {p}")
     print()
     print(f"({len(hits)} candidate layout(s) total)")
-
 
 main()

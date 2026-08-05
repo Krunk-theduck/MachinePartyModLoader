@@ -4,7 +4,7 @@ extends Node
 ## Runs as the FIRST autoload, before any game script is instantiated.
 ## Mods are plain .gd files in a folder outside the game install.
 
-const LOADER_VERSION := "1"
+const LOADER_VERSION := "2"
 const API_VERSION := 1
 
 var mods_root: String = ""
@@ -12,8 +12,9 @@ var mods: Array = []              # active mods, in load order
 var _by_id: Dictionary = {}
 var _log: PackedStringArray = PackedStringArray()
 
+var _kept_overrides: Array[GDScript] = []
 
-# ---------------------------------------------------------------- boot
+
 
 func _init() -> void:
 	mods_root = _resolve_mods_root()
@@ -37,17 +38,12 @@ func _ready() -> void:
 
 
 func _resolve_mods_root() -> String:
-	# user:// is the update-safe location. A mods/ folder next to the exe
-	# wins if it exists, for portable installs.
 	var exe_dir := OS.get_executable_path().get_base_dir()
 	var beside := exe_dir.path_join("mods")
 	if DirAccess.dir_exists_absolute(beside):
 		return beside
 	DirAccess.make_dir_recursive_absolute("user://mods")
 	return "user://mods"
-
-
-# ---------------------------------------------------------------- discovery
 
 func _discover() -> void:
 	var d := DirAccess.open(mods_root)
@@ -122,9 +118,7 @@ func _start_mods() -> void:
 	mods = active
 
 
-# ---------------------------------------------------------------- mod API
 
-## Compile a loose .gd file from disk into a usable GDScript.
 func compile(path: String) -> GDScript:
 	if not FileAccess.file_exists(path):
 		note("missing script: " + path)
@@ -141,10 +135,6 @@ func compile(path: String) -> GDScript:
 	return s
 
 
-## Replace a vanilla game script with a mod script.
-## The mod script MUST start with:  extends "res://path/to/vanilla.gd"
-## Every later load() of that res:// path returns the mod version instead,
-## so multiple mods chain rather than clobbering each other.
 func override_script(vanilla_path: String, mod_script_path: String) -> GDScript:
 	if not ResourceLoader.exists(vanilla_path):
 		note("no vanilla script at " + vanilla_path)
@@ -153,11 +143,11 @@ func override_script(vanilla_path: String, mod_script_path: String) -> GDScript:
 	if s == null:
 		return null
 	s.take_over_path(vanilla_path)
+	_kept_overrides.append(s)
 	note("override %s <- %s" % [vanilla_path, mod_script_path])
 	return s
 
 
-## Convenience: override using a path relative to a mod's own folder.
 func override_script_rel(mod_id: String, vanilla_path: String, rel: String) -> GDScript:
 	var d := dir_of(mod_id)
 	if d.is_empty():
