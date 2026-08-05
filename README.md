@@ -8,9 +8,10 @@ please be patient.
 VirusTotal flags this exe for 1 trojan: Elastic Malicious (moderate Confidence)
 In the next section where it is tested in virtual boxes it proceeds to score 0 malicious attempts.
 I promise the file is safe, its just unsigned due to me not having cash to spend on a free mod.
-![Detection Status](MPML/virusTotalDetection.png)
+  
+![Detection Status](MPML/virusTotalDetections.png)
 ![Behaviour Status](MPML/virusTotalBehaviour.png)
-
+  
 This page has two parts:
 
 - **Getting Started** (below) - for anyone who just wants to install mods.
