@@ -280,6 +280,19 @@ It only affects things loaded **after** your mod runs, which is why
 |`loader.mod_list()`|everything loaded|
 |`loader.open_mods_folder()`|pop the folder open in the file manager|
 
+**New in loader v3** (API level 2 — all additive, so older mods keep working unchanged). Feature-detect with `loader.has_api("mount_assets")` or `loader.api_version() >= 2` before calling:
+
+|Call|Does|
+|-|-|
+|`loader.mount_assets(id, rel)`|mount a `.zip`/`.pck` resource pack shipped inside your mod, so its `res://` assets load|
+|`loader.register_autoload(name, id, rel)`|register one of your scripts as an autoload singleton|
+|`loader.register_global_class(cls, id, rel)`|register a `class_name` global so other scripts can reference it|
+|`loader.register_script(id, rel, res_id)`|expose a script at a chosen `res://` path|
+|`loader.on_scene_script(cb)` / `on_node_added(cb)` / `on_main_menu(cb)` / `on_lobby(cb)`|shared lifecycle hooks — one callback list every mod shares, instead of each mod racing its own `SceneTree` watcher|
+|`loader.is_local_couch()` / `loader.game_mode()`|is the game in v2's local shared-screen couch mode; `"local"` / `"online"` / `""`|
+|`loader.registry(name)`|a shared, named `Dictionary` for cross-mod coordination|
+|`loader.api_version()` / `loader.loader_version()` / `loader.has_api(n)`|feature/version numbers and capability detection|
+
 Mod entry points: `_mod_init(loader)` (before the game exists — do overrides
 here) and `_mod_ready(loader)` (scene tree alive — safe to touch nodes).
 

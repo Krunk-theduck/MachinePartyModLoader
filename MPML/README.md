@@ -267,6 +267,18 @@ It only affects things loaded **after** your mod runs, which is why
 |`loader.has_mod(id)`|is another mod present|
 |`loader.mod_list()`|everything loaded|
 |`loader.open_mods_folder()`|pop the folder open in the file manager|
+|`loader.mount_assets(id, rel_zip)`|mount a `.zip` resource pack into `res://` (game files win)|
+|`loader.register_script(id, rel, res_id)`|compile a loose `.gd` and give it a stable `res://` path|
+|`loader.register_autoload(name, id, rel)`|register a singleton resolvable at compile time (call in `_mod_init`)|
+|`loader.register_global_class(cls, id, rel)`|compile a `class_name` script early at a stable path (call in `_mod_init`)|
+|`loader.on_scene_script(res_path, cb)`|run `cb(node)` when a node with that script enters the tree|
+|`loader.on_node_added(cb)`|run `cb(node)` for every node added, one shared watcher|
+|`loader.on_main_menu(cb)` / `loader.on_lobby(cb)`|shortcuts keyed on the menu / lobby scripts|
+|`loader.is_local_couch()`|`true` during a local couch game|
+|`loader.game_mode()`|`&"local"` / `&"networked"` / `&"menu"`|
+|`loader.registry(name)`|a shared `Dictionary` for cross-mod coordination|
+|`loader.api_version()` / `loader.loader_version()`|feature/version numbers|
+|`loader.has_api(n)`|feature-detect: pass an api name, or an int to compare `api_version()`|
 
 Mod entry points: `_mod_init(loader)` (before the game exists — do overrides
 here) and `_mod_ready(loader)` (scene tree alive — safe to touch nodes).
@@ -284,6 +296,104 @@ a known type on the right side. Fix: give it an explicit type instead —
 (e.g. `var thing: Node`) and then accessing members that only exist on the
 script attached to it, not on `Node` itself — leave the field untyped if you
 need to reach another mod's custom signals/methods through it.
+
+\---
+
+## API 2 — extra loader capabilities
+
+Everything above still works exactly as before; the calls here are additive.
+`loader.api_version()` returns `2` on a loader that has them, and
+`loader.has_api("mount_assets")` (or `loader.has_api(2)`) lets an older-safe mod
+feature-detect before calling.
+
+**Why these live on the loader:** the loader is the *first* autoload, so it runs
+before the GDScript compiler ever touches a game script. That's the same reason
+`override_script` works — and it's why the loader can register singletons/classes
+and hand out stable `res://` paths that game code (compiled *after* your mod)
+will actually resolve. A mod doing this from its own `_ready` is already too late.
+
+### 1. Ship real assets — `mount_assets(id, rel_zip)`
+
+Mount a Godot resource pack (a `.zip` exported as a *PCK/ZIP* resource pack) so
+your mod can ship `.tscn` / `.tres` / `.res` / imported textures, not just loose
+`.gd`. It's mounted with `replace=false`, so real game files always win.
+
+```gdscript
+func _mod_init(loader) -> void:
+	loader.mount_assets("my_mod", "assets.zip")   # files now live under res://
+```
+
+### 2. Register singletons / global classes (call in `_mod_init`)
+
+```gdscript
+func _mod_init(loader) -> void:
+	loader.register_autoload("MyApi", "my_mod", "my_api.gd")     # /root/MyApi
+	loader.register_global_class("MyThing", "my_mod", "my_thing.gd")
+```
+
+`register_autoload` compiles the script, parks it at a stable `res://modloader/`
+path, writes the `autoload/<name>` project setting, and adds a `/root/<name>`
+node. **Timing caveat:** this only reaches the compiler for scripts built *after*
+your mod runs, so it **must** be called from `_mod_init`. The script must
+`extends Node` (or a Node subclass) for the node half to appear — if it doesn't,
+the setting is still written and a log line explains the node was skipped.
+`register_global_class` is best-effort (Godot has no public runtime
+global-class API); when in doubt prefer the stable-path pattern in #3.
+
+### 3. Stable script paths — `register_script(id, rel, res_id)`
+
+Compile a loose mod `.gd` and pin it at a `res://` path any other script can
+`load()`. Formalizes the pattern some mods hand-roll with `take_over_path`.
+
+```gdscript
+func _mod_init(loader) -> void:
+	loader.register_script("my_mod", "shared.gd", "res://mods_shared/shared.gd")
+# elsewhere (this mod or another): const Shared = preload("res://mods_shared/shared.gd")
+```
+
+### 4. Lifecycle hooks — stop writing your own tree-watcher
+
+The loader runs **one** `get_tree().node_added` watcher and dispatches to you, so
+mods no longer each wire up their own watcher + node-path guessing.
+
+```gdscript
+func _mod_init(loader) -> void:
+	loader.on_lobby(_on_lobby)                       # main_menu.gd / lobby_scene.gd shortcuts
+	loader.on_scene_script("res://scenes/foo.gd", _on_foo)  # any script by res path
+	loader.on_node_added(_on_any)                    # every node, if you really need it
+
+func _on_lobby(node) -> void:
+	pass  # node is the lobby scene root
+```
+
+Callbacks receive the freshly-added `node`; a bad callback is skipped, it never
+takes the loader down.
+
+### 5. Couch / online awareness — one call, not re-derived everywhere
+
+```gdscript
+if loader.is_local_couch():
+	pass                                  # local split-screen game
+match loader.game_mode():
+	&"local", &"networked", &"menu":
+		pass
+```
+
+Both read `GameManager` / `NetworkManager` off `/root` and are fully guarded — if
+those singletons aren't up yet you get `false` / `&"menu"`, never a crash.
+
+### 6. Cross-mod coordination + versioning
+
+`loader.registry(name)` returns a shared `Dictionary` (created on first use,
+returned by reference) so several mods can meet on a common table — e.g. a shared
+custom-minigame registry — without stashing metas on the scene root.
+
+```gdscript
+func _mod_init(loader) -> void:
+	if not loader.has_api("registry"):
+		return
+	loader.registry("minigames")["hot_potato"] = "res://mods_shared/hot_potato.gd"
+```
 
 \---
 
