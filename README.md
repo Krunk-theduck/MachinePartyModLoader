@@ -1,5 +1,13 @@
 # Machine Party Mod Loader
 
+> # ⚠️ AFTER EVERY GAME UPDATE: RE-RUN THE LOADER ⚠️
+>
+> When Steam updates Machine Party it **overwrites the game file the mods are patched into, so your mods stop loading.** This is normal and expected — nothing is broken.
+>
+> **The fix takes one second:** after any game update, before you play, just **run `MachinePartyModLoader.exe` again** (or double-click **`Reinstall Mods (run after game updates).bat`** in your game folder). It re-patches instantly and your mods are back. You do **not** need to re-download or reinstall the mods themselves.
+>
+> If you launch and the mods are gone, that's all it is — an update reset the patch. Re-run the loader and you're good.
+
 ## Before we start
 
 This modloader was made by a single dev, using claude and the tiny amount of python I know,
