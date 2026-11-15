@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <utility>
 #include <vector>
-#include <unistd.h>
+
+#if defined(_WIN32)
+#include <io.h>
+#endif
 
 #include <asp/iter.hpp>
 
@@ -11,6 +14,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #elif defined(__APPLE__)
+#include <unistd.h>
 #include <mach-o/dyld.h>
 #else
 #include <unistd.h>
