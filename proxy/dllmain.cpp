@@ -20,6 +20,7 @@
 #include "patch.h"
 #include "settings/settings.hpp"
 #include "util/util.hpp"
+#include "Dirs/paths.hpp"
 
 extern "C" BOOL InitializeProxy();
 
@@ -62,17 +63,6 @@ bool EndsWithPck(const wchar_t *p) {
         return n >= 4 && _wcsicmp(p + n - 4, L".pck") == 0;
 }
 
-// Diagnostic: lets the log reveal where the game's user:// folder is (godot.log / modloader.log).
-bool LooksInteresting(const wchar_t *p) {
-        wchar_t low[600];
-        size_t n = std::wcslen(p);
-        if (n == 0 || n >= sizeof low / sizeof *low)
-                return false;
-        for (size_t i = 0; i <= n; ++i)
-                low[i] = (p[i] >= L'A' && p[i] <= L'Z') ? wchar_t(p[i] + 32) : p[i];
-        return std::wcsstr(low, L"godot.log") || std::wcsstr(low, L"modloader") ||
-               std::wcsstr(low, L"app_userdata");
-}
 
 HANDLE WINAPI HookedCreateFileW(LPCWSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disposition, DWORD flags, HANDLE tmpl) {
         const bool writing = (access & (GENERIC_WRITE | FILE_WRITE_DATA | FILE_APPEND_DATA)) != 0;
@@ -85,7 +75,7 @@ HANDLE WINAPI HookedCreateFileW(LPCWSTR name, DWORD access, DWORD share, LPSECUR
                         Log(".pck open #" + std::to_string(n) + ": " + Narrow(name) + (redirect ? "  -> redirected to modded" : "  (modded/other, passed through)"));
                 if (redirect)
                         name = g_moddedFull.c_str();
-        } else if (name && writing && InterlockedCompareExchange(&g_writeLogs, 0, 0) < 20 && LooksInteresting(name)) {
+        } else if (name && writing && InterlockedCompareExchange(&g_writeLogs, 0, 0) < 20) {
                 InterlockedIncrement(&g_writeLogs);
                 Log(std::string("game writes: ") + Narrow(name));
         }
@@ -140,14 +130,12 @@ void EnableConsole() {
 
 void Run() {
         const asp::fs::Path exe = util::executablePath();
-        if (exe.empty())
-                return;
+        if (exe.empty()) return;
 
         const asp::fs::Path gameDir = util::parentOf(exe);
-        if (mpml::settings::load(mpml::settings::fileFor(gameDir)).console)
-                EnableConsole();
+        if (mpml::settings::load(mpml::settings::fileFor(gameDir, "loader.cfg")).console) EnableConsole();
 
-        g_log.setFile(gameDir / "mpml_proxy.log");
+        if (mpml::settings::load(mpml::settings::fileFor(gameDir, "loader.cfg")).logging) g_log.setFile(dirs::logs(gameDir) / "mpml_proxy.log");
         Log("proxy loaded in: " + exe.string()); // proves Windows loaded this DLL
 
         auto paths = PathsFromExe(exe);

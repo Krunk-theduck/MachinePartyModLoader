@@ -12,6 +12,7 @@
 #include "settings/settings.hpp"
 #include "util/util.hpp"
 #include "version.h"
+#include "Dirs/paths.hpp"
 
 namespace mpml {
 namespace Detail {
@@ -113,7 +114,7 @@ void verify(const asp::fs::Path& file, const std::string& bootstrap) {
 }
 
 void buildModded(const asp::fs::Path& original, const asp::fs::Path& out,
-                 const std::string& bootstrap, const std::string& stamp, const LogFn& log) {
+     const std::string& bootstrap, const std::string& stamp, const LogFn& log) {
     pck::Pck p(original);
     if (log)
         log("pck: " + util::nameOf(original) + "  (Godot " + std::to_string(p.version(0)) + "." +
@@ -160,18 +161,12 @@ std::optional<Paths> PathsFromExe(const asp::fs::Path& gameExe) {
     }
     Paths out;
     out.original = original;
-    out.modded = util::parentOf(original) / (util::stemOf(original) + ".modded.pck");
+    out.modded = dirs::cache(dir) / (util::stemOf(original) + ".modded.pck");
     return out;
 }
 
-// ---------------------------------------------------------------------------
-// Loader folders (mods/ + gd/ + loader.cfg with their examples)
-// ---------------------------------------------------------------------------
-
 void EnsureLoaderFolders(const asp::fs::Path& gameDir, const LogFn& log) {
-    // Example mod (mods/console) - same rule as before: create it only once.
-    asp::fs::Path mods = gameDir / "mods";
-    asp::fs::Path console = mods / "console";
+    asp::fs::Path console = dirs::mods(gameDir) / "console";
     if (!asp::fs::exists(console)) {
         if (asp::fs::createDirAll(console).isOk()) {
             (void)asp::fs::write(console / "mod.json",
@@ -181,10 +176,7 @@ void EnsureLoaderFolders(const asp::fs::Path& gameDir, const LogFn& log) {
             if (log) log("wrote example mod -> " + console.string());
         }
     }
-
-    // Loose scripts (gd/) - loaded automatically, no mod.json needed. Write the
-    // example only when the folder is new or has no scripts at all.
-    asp::fs::Path gd = gameDir / "gd";
+    asp::fs::Path gd = dirs::plugins(gameDir);
     if (!asp::fs::exists(gd) || util::listFilesRecursive(gd, ".gd").empty()) {
         if (asp::fs::createDirAll(gd).isOk()) {
             (void)asp::fs::write(gd / "example.gd",
@@ -192,15 +184,8 @@ void EnsureLoaderFolders(const asp::fs::Path& gameDir, const LogFn& log) {
             if (log) log("wrote example script -> " + (gd / "example.gd").string());
         }
     }
-
-    // The settings file (loader.cfg) - written once with documented defaults;
-    // later edits belong to the user and are never overwritten.
-    settings::ensureDefault(settings::fileFor(gameDir));
+    settings::ensureDefault(settings::fileFor(gameDir, "loader.cfg"));
 }
-
-// ---------------------------------------------------------------------------
-// The modded pck
-// ---------------------------------------------------------------------------
 
 Result EnsureModdedPck(const Paths& paths, const LogFn& log) {
     Result r;

@@ -64,8 +64,8 @@ func _resolve_mods_root() -> String:
         return "user://mods"
 
 
-# --- loose scripts (gd/) ----------------------------------------------------
-# Every .gd file in gd/ loads automatically - no mod.json needed. Scripts that
+# --- loose scripts (plugins) ----------------------------------------------------
+# Every .gd file in MachinePartyModLoader/plugins loads automatically - no mod.json needed. Scripts that
 # extend Node start like mods; anything else is just compiled and registered.
 
 var gd_root: String = ""
@@ -74,12 +74,12 @@ func _resolve_gd_root() -> String:
         if not gd_root.is_empty():
                 return gd_root
         var exe_dir := OS.get_executable_path().get_base_dir()
-        var beside := exe_dir.path_join("gd")
+        var beside := exe_dir.path_join("MachinePartyModLoader").path_join("plugins")
         if DirAccess.dir_exists_absolute(beside):
                 gd_root = beside
         else:
-                DirAccess.make_dir_recursive_absolute("user://gd")
-                gd_root = "user://gd"
+                DirAccess.make_dir_recursive_absolute("user://plugins")
+                gd_root = "user://plugins"
         return gd_root
 
 func _gd_files(dir: String, out: Array) -> void:
@@ -560,7 +560,7 @@ func note(msg: String) -> void:
 
 func _flush_log() -> void:
         var game_dir := OS.get_executable_path().get_base_dir()
-        var log_dir := game_dir.path_join("MachinePartyModLoader")
+        var log_dir := game_dir.path_join("MachinePartyModLoader").path_join("logs")
 
         DirAccess.make_dir_recursive_absolute(log_dir)
 

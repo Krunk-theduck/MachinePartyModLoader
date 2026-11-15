@@ -1,136 +1,209 @@
 # Machine Party Mod Loader
-This page has two parts:
-  - Getting Started (below) - for anyone who just wants to install mods.
-  - For Mod Authors & Developers (way at the bottom) - for nerds who want to either confirm the safety, or the use of AI in this project (hang off, almost the entire loader was made with AI)
 
-If you're not planning to write a mod or complain, you can stop reading as soon
-as you hit the second part.
+> Game Updates: When Steam updates Machine Party, it overwrites the game files that the mods are patched into. With the new C++ rewrite, you do not need to panic or download anything again. If you use the Proxy DLL or the Steam Launch Option, it handles updates automatically on launch. Otherwise, just run the loader once after an update and your mods will be active again.
 
-## How to Use
-* **Proxy DLL (Windows):** copy `winmm.dll` next to `Machine Party.exe`. Launch as normal.
-* **Launcher (any OS):** set the Steam launch option to `"<path>/MachinePartyModLoader" %command%`.
-  On Linux/Mac you can also put the launcher binary INSIDE the `MachinePartyModLoader`
-  folder next to the game (the file and the folder can't share a name there) and use
-  `"<path>/MachinePartyModLoader/MachinePartyModLoader" %command%`.
-* Mods go in `mods/` next to the game exe - a mod is a **folder** with a
-  `mod.json`, or a single **`.zip`** file containing one (see the mod author
-  section). Loose `.gd` scripts go in `gd/` next to the game exe - they load
-  automatically, no mod.json needed.
-* After a game update, run the loader once (or just start the game through Steam) -
-  it notices the changed pck and rebuilds the modded copy on its own.
-* Uninstall: delete `winmm.dll` / the launch option, and run `MachinePartyModLoader --uninstall`
-  (removes the modded pck + record; your `mods/` and `gd/` folders are left alone).
-* The loader keeps its own stuff in `MachinePartyModLoader/` next to the game:
-  `modloader.log` (in-game loader log), `mpml.log` / `mpml_proxy.log` (launcher/proxy
-  logs sit next to the exe), `loader.cfg` (the settings file, see below) and
-  `cache/` (compile reports + verdict cache - safe to delete).
+This page is split into two parts:
 
-## Settings (`MachinePartyModLoader/loader.cfg`)
-A plain `key = value` file, created with documented defaults on first run.
-Lines starting with `#` are comments; unknown keys are ignored; deleting the
-file brings every default back.
+* Getting Started for anyone who just wants to install and play with mods.
+* For Mod Authors and Developers for anyone who wants to make mods, build from source, or check the AI usage in this project (fair warning, a huge chunk of this was built with AI).
 
-    console = false    Windows: give the game a debug console window so the
-                       loader logs are visible live. Off by default - set
-                       `console = true` to turn it on.
+If you are not planning to write a mod or complain, you can stop reading as soon as you hit the second part.
 
-If you previously used the old Python installer, restore a vanilla pck first
-(`--uninstall` in the old tool, or Steam "Verify integrity of game files").
+## Before we start
 
-## Script checking
-Every launch compile-checks the `.gd` scripts in `mods/` and `gd/` and logs syntax
-errors (with file + line) before the game starts - launches are never blocked.
-Scripts packed inside `.zip` mods are checked too (reported as `mod.zip!path.gd`).
+This mod loader was made by a single developer. It was originally built using Claude and a tiny amount of Python knowledge, and has since been completely rewritten in C++ using z.ai. Please be patient if anything is rough around the edges.
 
-    MachinePartyModLoader --compile            check gd/ + mods/, exit 1 on errors
-    MachinePartyModLoader --compile <path>     check one file, folder or .zip
+*(If you previously used the old Python version of this loader, restore a clean vanilla pack file first using the old uninstall command or use Steam validation before setting this up.)*
 
-The full report lands in `MachinePartyModLoader/cache/compile_report.txt`; verdicts
-are cached in `MachinePartyModLoader/cache/compile/` so only changed scripts are
-re-parsed. It is a syntax check only - type errors stay the engine's job.
+---
 
-## Test (Linux/Mac)
-    python3 tests/compare.py build/main/MachinePartyModLoader /path/to/modloader_patch.py
+## Getting Started
+
+### Step 1: Download the loader
+
+Grab the latest release of the mod loader. If it arrives as a compressed archive, extract all contents first so you have the standalone executable ready.
+
+### Step 2: Find your Machine Party folder
+
+1. Open Steam and find Machine Party in your Library.
+2. Right click the game, select Manage, and click Browse local files.
+3. Open the Windows version folder inside.
+4. You should see the main game executable and pack file. Keep this folder open.
+
+### Step 3: Install the loader
+
+You have two ways to run it:
+
+*Option A: Proxy DLL (Windows only)*
+
+1. Copy the proxy DLL directly into the folder next to the main game executable.
+2. Launch the game normally from Steam or your desktop.
+
+*Option B: Launcher and Steam Launch Options*
+
+1. Put the mod loader executable in your game folder. Note that on Linux or Mac, the binary must go inside a dedicated subfolder because the file and folder cannot share the exact same name.
+2. In Steam, right click Machine Party, open Properties, go to General, and find Launch Options.
+3. Paste the path to the loader followed by the command parameter:
+* Windows: `"C:\path\to\Machine Party_Windows\MachinePartyModLoader.exe" %command%`
+* Linux or Mac: `"/path/to/Machine Party/MachinePartyModLoader/MachinePartyModLoader" %command%`
 
 
-# For Mod Authors & Developers
 
-## Mods
-A mod is a folder in `mods/` with a `mod.json` and an entry script (`main.gd`):
+### Step 4: Installing mods
 
-    {
-      "id": "console",
-      "name": "Example console mod",
-      "version": "1.0.0",
-      "entry": "main.gd",
-      "priority": 0,
-      "requires": []
-    }
+Once you run the game or loader once, a mods directory will appear next to the game executable. To install a mod, drop its folder or zip file straight into that directory. A working example folder is already included for reference.
 
-### Zip mods
-The same thing can ship as a single `.zip` file in `mods/` - no extraction:
+### How do you know it worked?
 
-    mods/my_mod.zip        mod.json + main.gd at the zip root, or
-    mods/downloaded.zip    ...inside one wrapping folder ("MyMod-main/"),
-                           like a "Download ZIP" from a git host
+Once you are in the game, press the grave key located above Tab and to the left of the number one. A debug console should pop up on screen. Press it again or hit escape to close it.
 
-The loader opens the zip (Godot's `ZIPReader`), reads `mod.json`, compiles the
-entry script straight from the archive and starts it like any other mod -
-priority, requires, `dir_of()`, `register_script()` etc. all work; `dir_of()`
-returns the zip's path and paths joined onto it resolve inside the archive.
-To get at assets, mount the archive into `res://` with
-`ModLoader.mount_assets(my_id, "")` (a zip mod can mount itself). If a folder
-and a zip carry the same mod id, the folder wins and the zip is skipped.
+### Settings (`MachinePartyModLoader/configs/loader.cfg`)
 
-Mods can call the loader (injected as the `ModLoader` autoload, passed to
-`_mod_init` / `_mod_ready`) for API level 2: `compile`, `override_script`,
-`override_script_rel`, `dir_of`, `has_mod`, `mod_list`, `open_mods_folder`,
-`mount_assets`, `register_autoload`, `register_global_class`, `register_script`,
-`on_scene_script`, `on_node_added`, `on_main_menu`, `on_lobby`, `is_local_couch`,
-`game_mode`, `registry`, `api_version`, `loader_version`, `has_api`.
+The loader stores its logs and config inside a dedicated subfolder next to the game. The configuration file uses simple key value pairs generated on your first run. Lines starting with a hash symbol are comments:
 
-Loose scripts in `gd/` behave like one-file mods: `.gd` files that extend `Node`
-are started automatically (with `_mod_init` support); anything else is compiled
-and registered. The mod id of a loose script is its file name.
+```ini
+# Windows only: opens a live debug console window alongside the game
+console = false
 
-## How the pieces fit
-    asp2      THE file API (asp::fs, github.com/dankmeme01/asp2). Every disk
-              operation in the loader - launcher, proxy DLL, patcher, logger -
-              goes through it, never through raw std::filesystem/stdio. CMake
-              fetches it (pinned commit) together with miniz (zip reading for
-              the compile check) and asp2's own deps (fmt, geode::result).
-    patch/    mpml_patch: the pck reader/patcher (pck.cpp), the modded-pck logic
-              (patch.cpp), the .gd compile check (gdcheck.cpp) and the embedded
-              bootstrap.gd + example mod. Used by BOTH the launcher and the proxy.
-    main/     the launcher binary (Steam launch option / standalone).
-    proxy/    winmm.dll: loads before Godot, patches the pck if needed, then
-              hooks CreateFileW so "<game>.pck" opens "<game>.modded.pck".
-    Global/   shared code: mpml_util (exe path, hashing, sorted listings),
-              mpml_settings (loader.cfg) and mpml_logger.
+```
 
-## One version to rule them all
-The loader version lives in exactly ONE place: `mpml::kVersion` in `patch/version.h`.
-Everything else derives from it automatically:
-* `patch/bootstrap.gd` contains the placeholder `@MPML_VERSION@`; when the modded
-  pck is built, the patcher injects `kVersion`. (A version bump therefore also
-  changes the bootstrap bytes, which rebuilds the modded pck - automatically.)
-* CMake regenerates the Windows version resources (`version_loader.rc` /
-  `version_proxy.rc`) from `kVersion` on every configure - the exe/dll properties
-  always match the loader version.
-Never edit `LOADER_VERSION` in bootstrap.gd by hand; bump `kVersion` instead.
+### Uninstalling
 
-## Building (Windows)
-    cmake -B build
-    cmake --build build --config Release
-Outputs: `build/main/MachinePartyModLoader.exe` and `build/proxy/winmm.dll`.
-NASM is bundled in `Scripts/nasm/` (the winmm jump table); MinHook, asp2 and
-miniz are fetched by CMake on first configure (network needed once).
-asp2's headers use C++23 (deducing `this`) - use a current VS 2022 (17.13+).
-The first configure needs internet access to fetch asp2 (pinned commit) + its
-dependencies via CPM.
+1. Delete the proxy DLL from your game folder or clear your Steam launch options.
+2. Run the mod loader executable from your command line with the uninstall flag to restore the original game files and remove loader records while leaving your mods intact.
 
-## Building (Linux/Mac)
-    cmake -B build -DCMAKE_BUILD_TYPE=Release
-    cmake --build build -j
-(the proxy DLL is Windows-only; the launcher + patcher build everywhere -
-GCC 13+/Clang 17+ for the C++23 headers)
+---
+
+---
+
+# For Mod Authors and Developers
+
+Everything below assumes you are comfortable with a terminal, C++, and GDScript. If you just wanted to play with mods, you are already done.
+
+## How it works
+
+1. When launched through the proxy or command line, the C++ patcher checks the game pack file.
+2. If the pack file is not patched or was overwritten by a Steam update, it injects the bootstrap logic and adjusts entry points so the mod loader initializes before game scripts run.
+3. Because Godot uses an append only pack format, patching and restoring takes a fraction of a second without duplicating massive files.
+4. On startup, the loader scans the mods directory and plugins directory, verifies script syntax, and loads everything in priority order.
+
+## Script checking and CLI flags
+
+The C++ executable processes command line arguments directly to control behavior. Supported flags include:
+
+* `--uninstall`: Restores original files and removes temporary records.
+* `--play`: Applies patches if needed and immediately launches the game.
+* `--compile`: Checks script syntax across all plugins and mods, exiting with code one if errors are found.
+* `--compile <path>`: Checks syntax for a single specified file, folder, or zip archive.
+
+You can also check scripts manually from a terminal. Results are saved to a report file and cached so unchanged scripts are skipped. This performs a syntax check only, leaving type validation to the game engine.
+
+---
+
+## Writing a Mod
+
+### Folder Mods
+
+Create a folder inside the mods directory containing a configuration file named `mod.json` and an entry script named `main.gd`:
+
+```json
+{
+  "id": "bigger_jump",
+  "name": "Bigger Jump",
+  "version": "1.0.0",
+  "entry": "main.gd",
+  "priority": 0,
+  "requires": []
+}
+
+```
+
+```gdscript
+extends Node
+
+func _mod_init(loader) -> void:
+	loader.note("bigger jump loading")
+
+func _mod_ready(loader) -> void:
+	loader.note("bigger jump ready")
+
+```
+
+### Zip Mods and Loose Plugins
+
+* **Zip Mods:** You can distribute your mod as a single zip file placed directly in the mods directory without extracting it. The configuration and entry script can sit at the root or inside a single wrapper folder. Call `loader.mount_assets` to load its resources. If an extracted folder and a zip share the same mod identifier, the folder takes priority.
+* **Loose Plugins:** Single script files placed in the plugins directory act as lightweight mods. Scripts extending Node start automatically, and their identifier defaults to their filename.
+
+### Overriding Vanilla Scripts
+
+To modify an existing game script, create a separate file that extends the original script path at the very top:
+
+```gdscript
+extends "res://scripts/player.gd"
+
+func _ready() -> void:
+	super._ready()
+	print("player script has been modded")
+
+```
+
+Register the override inside your initialization function before the game builds scenes:
+
+```gdscript
+func _mod_init(loader) -> void:
+	loader.override_script_rel("bigger_jump", "res://scripts/player.gd", "override.gd")
+
+```
+
+---
+
+## Loader API
+
+The loader is injected as an autoload singleton and passed directly into mod initialization and ready functions.
+
+### Core Methods
+
+* `loader.note(text)`: Prints messages to the console and log files.
+* `loader.compile(abs_path)`: Compiles a loose script file into a usable script object.
+* `loader.override_script(res_path, abs_path)`: Swaps a vanilla script with an external file.
+* `loader.override_script_rel(id, res_path, rel)`: Same as above, relative to your mod folder.
+* `loader.dir_of(id)`: Returns the folder path or zip path for a mod.
+* `loader.has_mod(id)`: Returns true if the specified mod is loaded.
+* `loader.mod_list()`: Returns a list of all loaded mods.
+* `loader.open_mods_folder()`: Opens the mods directory in your operating system file manager.
+
+### API Level Additions
+
+* `loader.mount_assets(id, rel)`: Mounts a zip or pack archive so its resources load properly.
+* `loader.register_autoload(name, id, rel)`: Registers a script as an autoload singleton.
+* `loader.register_global_class(cls, id, rel)`: Registers a global class name for other scripts.
+* `loader.register_script(id, rel, res_id)`: Exposes a script at a specific resource path.
+* `loader.registry(name)`: Returns a shared named dictionary for cross mod communication.
+
+---
+
+## Building from Source
+
+### Versioning
+
+The loader version is defined in a single header file. During compilation, placeholders in the bootstrap script are automatically updated, and CMake regenerates version resources so executable properties always match the loader version.
+
+### Windows Compilation
+
+Requires Visual Studio with a recent toolchain supporting C++23 features. Internet access is required on the first CMake configure step to fetch dependencies via CPM.
+
+```bash
+cmake -B build
+cmake --build build --config Release
+
+```
+
+### Linux and Mac Compilation
+
+Requires a modern compiler supporting C++23 standards. The proxy DLL is Windows specific, but the launcher and patcher build natively across platforms.
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+
+```

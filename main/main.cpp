@@ -26,6 +26,7 @@
 #include "patch.h"
 #include "gdcheck.h"
 #include "util/util.hpp"
+#include "Dirs/paths.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -36,7 +37,7 @@
 
 namespace mpml {
 
-// The launcher's one logger: stderr + mpml.log next to the game.
+// The launcher's one logger: stderr + mpml.log
 static logger g_log;
 void Log(const std::string& s) { g_log.log(s); }
 
@@ -125,7 +126,6 @@ std::vector<fs::Path> GameExeCandidatesIn(const fs::Path& dir, const fs::Path& s
     for (const fs::Path& p : util::listDirSorted(dir)) {
         std::string n = util::nameOf(p);
         for (auto& ch : n) ch = char(std::tolower(static_cast<unsigned char>(ch)));
-        if (n.find("modloader") != std::string::npos || n.find("crash") != std::string::npos) continue;
         if (!self.empty() && util::absString(p) == util::absString(self)) continue;
 #ifdef _WIN32
         if (p.extension().value_or("") == "exe") c.push_back(p);
@@ -152,11 +152,11 @@ std::optional<fs::Path> FindGameExeBeside(const fs::Path& dir, const fs::Path& s
 }
 
 // Best guess at the game dir when no pck is around: the folder that holds
-// mods/ or gd/ (the loader may sit inside MachinePartyModLoader/ on Linux).
+// mods/ (the loader may sit inside MachinePartyModLoader/ on Linux).
 fs::Path GuessGameDir(const fs::Path& dir) {
     const fs::Path up = util::parentOf(dir);
     for (const fs::Path* d : {&dir, &up}) {
-        if ((*d / "mods").isDir() || (*d / "gd").isDir()) return *d;
+        if ((*d / "mods").isDir()) return *d;
     }
     return dir;
 }
@@ -174,12 +174,10 @@ int main(int argc, char** argv) {
         if (a == "--uninstall") uninstall = true;
         if (a == "--play") play = true;
         if (a == "--compile") compile = true;
-        // A path directly after --compile limits the check to that file/folder.
         if (a == "--compile" && i + 1 < rest.size() && !Detail::IsFlag(rest[i + 1]))
             compileTarget = rest[i + 1];
     }
 
-    // Steam mode: the first argument is (part of) the game's command line.
     if (!rest.empty() && !Detail::IsFlag(rest[0])) {
         std::optional<Paths> paths;
         for (auto& a : rest) {
@@ -191,7 +189,7 @@ int main(int argc, char** argv) {
         std::vector<asp::fs::Path> cmd = rest;
         if (paths) {
             const asp::fs::Path gameDir = util::parentOf(paths->original);
-            g_log.setFile(gameDir / "mpml.log");
+            g_log.setFile(mpml::dirs::logs(gameDir) / "mpml.log");
             Result r = EnsureModdedPck(*paths, Log);
             if (r.ok) {
                 EnsureLoaderFolders(gameDir, Log);
@@ -218,8 +216,7 @@ int main(int argc, char** argv) {
     // Without the game's pck we can still serve mod authors: --compile works
     // anywhere, rooted at the folder that holds mods/ or gd/.
     const asp::fs::Path gameDir = paths ? util::parentOf(paths->original) : Detail::GuessGameDir(dir);
-    const asp::fs::Path dataDir = gameDir / "MachinePartyModLoader";
-    g_log.setFile(gameDir / "mpml.log");
+    g_log.setFile(mpml::dirs::logs(gameDir) / "mpml.log");
 
     if (compile) {
         std::vector<asp::fs::Path> roots;
@@ -229,10 +226,10 @@ int main(int argc, char** argv) {
             roots.push_back(gameDir / "gd");
             roots.push_back(gameDir / "mods");
         }
-        const int errors = gd::CheckRoots(roots, dataDir / "cache", Log, !compileTarget, true);
+        const int errors = gd::CheckRoots(roots, mpml::dirs::cache(gameDir), Log, !compileTarget, true);
         if (errors == 0) Log("compile check passed");
         else Log(std::to_string(errors) + " script error(s) - details above and in " +
-                 (dataDir / "cache" / "compile_report.txt").string());
+                 (mpml::dirs::cache(gameDir) /  "compile_report.txt").string());
         return errors == 0 ? 0 : 1;
     }
 

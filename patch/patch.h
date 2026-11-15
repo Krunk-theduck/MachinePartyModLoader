@@ -40,7 +40,7 @@ std::optional<Paths> PathsFromExe(const asp::fs::Path& gameExe);
 Result EnsureModdedPck(const Paths& paths, const LogFn& log = nullptr);
 
 // Creates the loader folders next to the game: mods/ (with the example
-// console mod when new), gd/ (with one example loose script when new) and
+// console mod when new), MachinePartyModLoader/plugins (with one example loose script when new) and
 // MachinePartyModLoader/loader.cfg (the settings file, defaults only).
 void EnsureLoaderFolders(const asp::fs::Path& gameDir, const LogFn& log = nullptr);
 
