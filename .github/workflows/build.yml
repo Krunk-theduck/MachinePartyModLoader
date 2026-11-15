@@ -13,12 +13,10 @@ jobs:
         include:
           - os: windows-latest
             name: windows-x64
-            generator: Visual Studio 17 2022
             architecture: x64
 
           - os: macos-latest
             name: macos-arm64
-            generator: Ninja
             architecture: ""
 
     name: Build ${{ matrix.name }}
@@ -36,12 +34,13 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Configure (Windows)
+      - name: Setup MSVC (Windows)
         if: runner.os == 'Windows'
-        run: cmake -S . -B build -G "${{ matrix.generator }}" -A ${{ matrix.architecture }} -DCMAKE_BUILD_TYPE=Release
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.architecture }}
 
-      - name: Configure (macOS)
-        if: runner.os == 'macOS'
+      - name: Configure CMake
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
