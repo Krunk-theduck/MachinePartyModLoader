@@ -1,10 +1,10 @@
-
 name: Build MPML
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+
 jobs:
   build:
     strategy:
@@ -34,23 +34,15 @@ jobs:
         uses: lukka/get-cmake@latest
 
       - name: Setup Ninja
-        if: runner.os == 'macOS'
         uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Configure (Windows)
         if: runner.os == 'Windows'
-        run: >
-          cmake -S . -B build
-          -G "${{ matrix.generator }}"
-          -A ${{ matrix.architecture }}
-          -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G "${{ matrix.generator }}" -A ${{ matrix.architecture }} -DCMAKE_BUILD_TYPE=Release
 
       - name: Configure (macOS)
         if: runner.os == 'macOS'
-        run: >
-          cmake -S . -B build
-          -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release --parallel
