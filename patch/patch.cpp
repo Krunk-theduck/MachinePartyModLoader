@@ -9,6 +9,8 @@
 
 #include "embedded.h"
 #include "pck.h"
+#include "settings/settings.hpp"
+#include "util/util.hpp"
 #include "version.h"
 
 namespace mpml {
@@ -55,30 +57,28 @@ struct Record {
     std::string loader;
 };
 
-bool loadRecord(const asp2::fs::Path& p, Record& r) {
-    try {
-        std::string s = asp2::fs::readText(p);
-        unsigned long long size = 0, hash = 0;
-        long long mtime = 0;
-        char loader[128] = {0};
-        if (std::sscanf(s.c_str(), "%llu %lld %llx %127s", &size, &mtime, &hash, loader) != 4)
-            return false;
-        r.size = size;
-        r.mtime = mtime;
-        r.hash = hash;
-        r.loader = loader;
-        return true;
-    } catch (...) {
+bool loadRecord(const asp::fs::Path& p, Record& r) {
+    auto res = asp::fs::readToString(p);
+    if (res.isErr()) return false;
+    const std::string s = std::move(res).unwrap();
+    unsigned long long size = 0, hash = 0;
+    long long mtime = 0;
+    char loader[128] = {0};
+    if (std::sscanf(s.c_str(), "%llu %lld %llx %127s", &size, &mtime, &hash, loader) != 4)
         return false;
-    }
+    r.size = size;
+    r.mtime = mtime;
+    r.hash = hash;
+    r.loader = loader;
+    return true;
 }
 
-void saveRecord(const asp2::fs::Path& p, const Record& r) {
+void saveRecord(const asp::fs::Path& p, const Record& r) {
     char buf[256];
-    int n = std::snprintf(buf, sizeof buf, "%llu %lld %llx %s\n",
-                          static_cast<unsigned long long>(r.size), static_cast<long long>(r.mtime),
-                          static_cast<unsigned long long>(r.hash), r.loader.c_str());
-    asp2::fs::writeBytes(p, buf, size_t(n));
+    const int n = std::snprintf(buf, sizeof buf, "%llu %lld %llx %s\n",
+                                static_cast<unsigned long long>(r.size), static_cast<long long>(r.mtime),
+                                static_cast<unsigned long long>(r.hash), r.loader.c_str());
+    (void)asp::fs::write(p, std::string_view{buf, size_t(n)});
 }
 
 // --- the three pck edits ----------------------------------------------------
@@ -100,7 +100,7 @@ void applyPatch(pck::Pck& p, const std::string& bootstrap, const std::string& st
     p.put(kStampRes, bytes(stamp));
 }
 
-void verify(const asp2::fs::Path& file, const std::string& bootstrap) {
+void verify(const asp::fs::Path& file, const std::string& bootstrap) {
     pck::Pck check(file);
     std::vector<uint8_t> got;
     if (!check.readFile(kBootstrapRes, got) || std::string(got.begin(), got.end()) != bootstrap)
@@ -112,16 +112,16 @@ void verify(const asp2::fs::Path& file, const std::string& bootstrap) {
         throw Error("verification failed: autoload is not first");
 }
 
-void buildModded(const asp2::fs::Path& original, const asp2::fs::Path& out,
+void buildModded(const asp::fs::Path& original, const asp::fs::Path& out,
                  const std::string& bootstrap, const std::string& stamp, const LogFn& log) {
     pck::Pck p(original);
     if (log)
-        log("pck: " + original.name() + "  (Godot " + std::to_string(p.version(0)) + "." +
+        log("pck: " + util::nameOf(original) + "  (Godot " + std::to_string(p.version(0)) + "." +
             std::to_string(p.version(1)) + "." + std::to_string(p.version(2)) + ", pack format " +
             std::to_string(p.fmt()) + ", " + std::to_string(p.entries().size()) + " files)");
     applyPatch(p, bootstrap, stamp);
     if (p.fmt() >= 3) {
-        if (!asp2::fs::copyFile(original, out)) throw Error("cannot copy the original pck");
+        if (asp::fs::copy(original, out).isErr()) throw Error("cannot copy the original pck");
         p.appendPatchV3(out);
     } else {
         p.rewriteV2(out);
@@ -129,8 +129,8 @@ void buildModded(const asp2::fs::Path& original, const asp2::fs::Path& out,
     verify(out, bootstrap);
 }
 
-bool endsWithModded(const asp2::fs::Path& p) {
-    std::string n = lower(p.name());
+bool endsWithModded(const asp::fs::Path& p) {
+    const std::string n = lower(util::nameOf(p));
     return n.size() >= 11 && n.compare(n.size() - 11, 11, ".modded.pck") == 0;
 }
 
@@ -140,58 +140,62 @@ bool endsWithModded(const asp2::fs::Path& p) {
 // Paths
 // ---------------------------------------------------------------------------
 
-asp2::fs::Path Paths::record() const {
-    asp2::fs::Path r = modded.str() + ".record";
-    return r;
+asp::fs::Path Paths::record() const {
+    return asp::fs::Path{modded.string() + ".record"};
 }
 
-std::optional<Paths> PathsFromExe(const asp2::fs::Path& gameExe) {
-    asp2::fs::Path dir = gameExe.parent();
-    if (dir.empty()) dir = asp2::fs::Path(".");
-    asp2::fs::Path original;
+std::optional<Paths> PathsFromExe(const asp::fs::Path& gameExe) {
+    asp::fs::Path dir = util::parentOf(gameExe);
+    asp::fs::Path original;
 
-    asp2::fs::Path guess = dir / (gameExe.stem() + ".pck");
-    if (asp2::fs::isFile(guess) && !Detail::endsWithModded(guess)) {
+    asp::fs::Path guess = dir / (util::stemOf(gameExe) + ".pck");
+    if (guess.isFile() && !Detail::endsWithModded(guess)) {
         original = guess;
     } else {
-        std::vector<asp2::fs::Path> pcks;
-        for (const asp2::fs::Path& p : asp2::fs::listDir(dir))
-            if (p.ext() == ".pck" && !Detail::endsWithModded(p)) pcks.push_back(p);
+        std::vector<asp::fs::Path> pcks;
+        for (const asp::fs::Path& p : util::listDirSorted(dir))
+            if (p.extension().value_or("") == "pck" && !Detail::endsWithModded(p)) pcks.push_back(p);
         if (pcks.empty()) return std::nullopt;
-        original = pcks.front(); // listDir is sorted
+        original = pcks.front(); // listDirSorted is sorted
     }
     Paths out;
     out.original = original;
-    out.modded = original.parent() / (original.stem() + ".modded.pck");
+    out.modded = util::parentOf(original) / (util::stemOf(original) + ".modded.pck");
     return out;
 }
 
 // ---------------------------------------------------------------------------
-// Loader folders (mods/ + gd/ with their examples)
+// Loader folders (mods/ + gd/ + loader.cfg with their examples)
 // ---------------------------------------------------------------------------
 
-void EnsureLoaderFolders(const asp2::fs::Path& gameDir, const LogFn& log) {
+void EnsureLoaderFolders(const asp::fs::Path& gameDir, const LogFn& log) {
     // Example mod (mods/console) - same rule as before: create it only once.
-    asp2::fs::Path mods = gameDir / "mods";
-    asp2::fs::makeDirs(mods);
-    asp2::fs::Path console = mods / "console";
-    if (!asp2::fs::exists(console)) {
-        if (asp2::fs::makeDirs(console)) {
-            asp2::fs::writeBytes(console / "mod.json", kExampleModJson, kExampleModJsonSize);
-            asp2::fs::writeBytes(console / "main.gd", kExampleModGd, kExampleModGdSize);
-            if (log) log("wrote example mod -> " + console.str());
+    asp::fs::Path mods = gameDir / "mods";
+    asp::fs::Path console = mods / "console";
+    if (!asp::fs::exists(console)) {
+        if (asp::fs::createDirAll(console).isOk()) {
+            (void)asp::fs::write(console / "mod.json",
+                                 std::span{kExampleModJson, kExampleModJsonSize});
+            (void)asp::fs::write(console / "main.gd",
+                                 std::span{kExampleModGd, kExampleModGdSize});
+            if (log) log("wrote example mod -> " + console.string());
         }
     }
 
     // Loose scripts (gd/) - loaded automatically, no mod.json needed. Write the
     // example only when the folder is new or has no scripts at all.
-    asp2::fs::Path gd = gameDir / "gd";
-    if (!asp2::fs::exists(gd) || asp2::fs::listFilesRecursive(gd, ".gd").empty()) {
-        if (asp2::fs::makeDirs(gd)) {
-            asp2::fs::writeBytes(gd / "example.gd", kExampleLooseGd, kExampleLooseGdSize);
-            if (log) log("wrote example script -> " + (gd / "example.gd").str());
+    asp::fs::Path gd = gameDir / "gd";
+    if (!asp::fs::exists(gd) || util::listFilesRecursive(gd, ".gd").empty()) {
+        if (asp::fs::createDirAll(gd).isOk()) {
+            (void)asp::fs::write(gd / "example.gd",
+                                 std::span{kExampleLooseGd, kExampleLooseGdSize});
+            if (log) log("wrote example script -> " + (gd / "example.gd").string());
         }
     }
+
+    // The settings file (loader.cfg) - written once with documented defaults;
+    // later edits belong to the user and are never overwritten.
+    settings::ensureDefault(settings::fileFor(gameDir));
 }
 
 // ---------------------------------------------------------------------------
@@ -200,26 +204,26 @@ void EnsureLoaderFolders(const asp2::fs::Path& gameDir, const LogFn& log) {
 
 Result EnsureModdedPck(const Paths& paths, const LogFn& log) {
     Result r;
-    asp2::fs::Path tmp(paths.modded.str() + ".tmp");
+    asp::fs::Path tmp(paths.modded.string() + ".tmp");
     try {
-        if (!asp2::fs::isFile(paths.original))
-            throw Error("original pck not found: " + paths.original.str());
+        if (!paths.original.isFile())
+            throw Error("original pck not found: " + paths.original.string());
 
         const std::string bootstrap = Detail::finalizeBootstrap();
         const std::string stamp =
             std::string(kVersion) + ":" +
-            Detail::hex64(asp2::fs::hashBytes(asp2::fs::kHashSeed,
-                                              reinterpret_cast<const uint8_t*>(bootstrap.data()),
-                                              bootstrap.size()));
+            Detail::hex64(util::hashBytes(util::kHashSeed,
+                                          reinterpret_cast<const uint8_t*>(bootstrap.data()),
+                                          bootstrap.size()));
 
         Detail::Record now;
-        now.size = asp2::fs::fileSize(paths.original);
-        now.mtime = asp2::fs::mtime(paths.original);
+        now.size = util::fileSizeOr0(paths.original);
+        now.mtime = util::mtimeNs(paths.original);
         now.loader = stamp;
 
         Detail::Record saved;
         const bool have = Detail::loadRecord(paths.record(), saved) &&
-                          asp2::fs::isFile(paths.modded) && saved.loader == stamp;
+                          paths.modded.isFile() && saved.loader == stamp;
 
         // Tier 1: size + mtime unchanged -> nothing to do.
         if (have && saved.size == now.size && saved.mtime == now.mtime) {
@@ -228,8 +232,8 @@ Result EnsureModdedPck(const Paths& paths, const LogFn& log) {
         }
 
         // Tier 2: hash the original; Steam may touch the timestamp without changing content.
-        now.hash = asp2::fs::hashFile(paths.original);
-        if (now.hash == 0) throw Error("cannot read " + paths.original.str());
+        now.hash = util::hashFile(paths.original);
+        if (now.hash == 0) throw Error("cannot read " + paths.original.string());
         if (have && saved.size == now.size && saved.hash == now.hash) {
             Detail::saveRecord(paths.record(), now);
             r.ok = true;
@@ -238,17 +242,18 @@ Result EnsureModdedPck(const Paths& paths, const LogFn& log) {
 
         // Rebuild: original changed, first run, or bootstrap changed.
         if (log) log(have ? "game pck changed - rebuilding modded copy" : "building modded copy");
-        asp2::fs::makeDirs(paths.modded.parent());
-        asp2::fs::removeTree(tmp);
+        (void)asp::fs::createDirAll(util::parentOf(paths.modded));
+        util::removeTree(tmp);
         Detail::buildModded(paths.original, tmp, bootstrap, stamp, log);
-        asp2::fs::remove(paths.modded);
-        if (!asp2::fs::rename(tmp, paths.modded)) throw Error("cannot put the modded pck in place");
+        (void)asp::fs::remove(paths.modded);
+        if (asp::fs::rename(tmp, paths.modded).isErr())
+            throw Error("cannot put the modded pck in place");
         Detail::saveRecord(paths.record(), now);
-        if (log) log("patched and verified -> " + paths.modded.name());
+        if (log) log("patched and verified -> " + util::nameOf(paths.modded));
         r.ok = true;
         r.rebuilt = true;
     } catch (const std::exception& e) {
-        asp2::fs::removeTree(tmp);
+        util::removeTree(tmp);
         r.ok = false;
         r.message = e.what();
     }
@@ -256,8 +261,8 @@ Result EnsureModdedPck(const Paths& paths, const LogFn& log) {
 }
 
 void RemoveModded(const Paths& paths, const LogFn& log) {
-    if (asp2::fs::remove(paths.modded) && log) log("removed " + paths.modded.str());
-    if (asp2::fs::remove(paths.record()) && log) log("removed " + paths.record().str());
+    if (asp::fs::remove(paths.modded).isOk() && log) log("removed " + paths.modded.string());
+    if (asp::fs::remove(paths.record()).isOk() && log) log("removed " + paths.record().string());
 }
 
 } // namespace mpml

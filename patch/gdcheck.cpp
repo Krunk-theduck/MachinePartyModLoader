@@ -6,8 +6,12 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <miniz.h>
+
+#include "util/util.hpp"
 #include "version.h"
 
 namespace mpml {
@@ -431,13 +435,10 @@ std::string hex16(uint64_t v) {
     return b;
 }
 
-bool loadCached(const asp2::fs::Path& p, std::vector<Diag>& out) {
-    std::string s;
-    try {
-        s = asp2::fs::readText(p);
-    } catch (...) {
-        return false;
-    }
+bool loadCached(const asp::fs::Path& p, std::vector<Diag>& out) {
+    auto res = asp::fs::readToString(p);
+    if (res.isErr()) return false;
+    std::string s = std::move(res).unwrap();
     std::vector<Diag> parsed;
     size_t start = 0;
     while (start <= s.size()) {
@@ -462,7 +463,7 @@ bool loadCached(const asp2::fs::Path& p, std::vector<Diag>& out) {
     return true;
 }
 
-void saveCached(const asp2::fs::Path& p, const std::vector<Diag>& diags) {
+void saveCached(const asp::fs::Path& p, const std::vector<Diag>& diags) {
     std::string s;
     for (const Diag& d : diags) {
         s += d.error ? "E " : "W ";
@@ -471,7 +472,7 @@ void saveCached(const asp2::fs::Path& p, const std::vector<Diag>& diags) {
         s += d.msg;
         s += '\n';
     }
-    asp2::fs::writeText(p, s);
+    (void)asp::fs::write(p, s);
 }
 
 std::string describe(const Diag& d) {
@@ -482,6 +483,130 @@ std::string describe(const Diag& d) {
 
 // The public API below speaks in Detail's types.
 using namespace Detail;
+
+// --- zip mods: same check for the .gd files packed inside a .zip ------------
+
+// Zip verdicts cache in one file per zip:
+//   F <entry name>            starts the block of one packed script
+//   E|W <line> <message>      that script's findings
+bool loadZipCached(const asp::fs::Path& p, std::vector<FileResult>& out) {
+    auto res = asp::fs::readToString(p);
+    if (res.isErr()) return false;
+    const std::string s = std::move(res).unwrap();
+    std::vector<FileResult> parsed;
+    size_t start = 0;
+    while (start <= s.size()) {
+        size_t end = s.find('\n', start);
+        if (end == std::string::npos) end = s.size();
+        const std::string ln = s.substr(start, end - start);
+        start = end + 1;
+        if (ln.empty()) { if (end == s.size()) break; continue; }
+        if (ln[0] == 'F') {
+            FileResult r;
+            r.path = asp::fs::Path{ln.substr(2)};
+            parsed.push_back(std::move(r));
+            continue;
+        }
+        if (parsed.empty() || (ln[0] != 'E' && ln[0] != 'W')) return false;
+        Diag d;
+        d.error = ln[0] == 'E';
+        const size_t sp1 = ln.find(' ');
+        if (sp1 == std::string::npos) return false;
+        const size_t sp2 = ln.find(' ', sp1 + 1);
+        if (sp2 == std::string::npos) return false;
+        d.line = std::atoi(ln.c_str() + sp1 + 1);
+        d.msg = ln.substr(sp2 + 1);
+        parsed.back().diags.push_back(std::move(d));
+        if (end == s.size()) break;
+    }
+    out = std::move(parsed);
+    return true;
+}
+
+void saveZipCached(const asp::fs::Path& p, const std::vector<FileResult>& results) {
+    std::string s;
+    for (const FileResult& r : results) {
+        s += "F " + r.path.string() + "\n";
+        for (const Diag& d : r.diags) {
+            s += d.error ? "E " : "W ";
+            s += std::to_string(d.line);
+            s += ' ';
+            s += d.msg;
+            s += '\n';
+        }
+    }
+    (void)asp::fs::write(p, s);
+}
+
+// Checks every .gd file packed inside `zipPath` (sorted by internal name).
+// Results are reported as "<zip>!<internal path>".
+void checkZip(const asp::fs::Path& zipPath, const asp::fs::Path& cacheDir, bool useCache,
+              std::vector<FileResult>& out) {
+    const asp::fs::Path cdir = cacheDir / "compile";
+    std::string key;
+    if (useCache) {
+        const uint64_t h = util::hashFile(zipPath);
+        if (h != 0) {
+            key = std::string(kVersion) + "-" + hex16(h);
+            const asp::fs::Path cp = cdir / (key + ".zipcheck");
+            std::vector<FileResult> replay;
+            if (cp.isFile() && loadZipCached(cp, replay)) {
+                for (FileResult& r : replay) r.cached = true;
+                out.insert(out.end(), std::make_move_iterator(replay.begin()),
+                           std::make_move_iterator(replay.end()));
+                return;
+            }
+        }
+    }
+
+    // Read the archive through asp2 (unicode-safe on Windows, and it keeps
+    // every disk access in one place), then hand the bytes to miniz. The
+    // buffer must outlive the reader - it does (same scope).
+    auto bytesRes = asp::fs::read(zipPath);
+    std::vector<uint8_t> bytes = bytesRes.isErr() ? std::vector<uint8_t>{} : std::move(bytesRes).unwrap();
+    mz_zip_archive zip = {};
+    if (bytes.empty() || !mz_zip_reader_init_mem(&zip, bytes.data(), bytes.size(), 0)) {
+        FileResult r;
+        r.path = zipPath;
+        r.diags.push_back({0, true, "cannot open the zip - is it a valid .zip mod archive?"});
+        out.push_back(std::move(r));
+        return;
+    }
+
+    std::vector<std::pair<std::string, int>> scripts; // internal name -> entry index
+    const int count = mz_zip_reader_get_num_files(&zip);
+    for (int i = 0; i < count; ++i) {
+        mz_zip_archive_file_stat st;
+        if (!mz_zip_reader_file_stat(&zip, i, &st)) continue;
+        const std::string name = st.m_filename;
+        if (name.empty() || name.back() == '/') continue;
+        const size_t slash = name.find_last_of('/');
+        const std::string base = slash == std::string::npos ? name : name.substr(slash + 1);
+        if (base.size() > 3 && base.compare(base.size() - 3, 3, ".gd") == 0)
+            scripts.emplace_back(name, i);
+    }
+    std::sort(scripts.begin(), scripts.end());
+
+    for (const auto& [name, idx] : scripts) {
+        FileResult r;
+        r.path = asp::fs::Path{zipPath.string() + "!" + name};
+        size_t size = 0;
+        void* data = mz_zip_reader_extract_to_heap(&zip, idx, &size, 0);
+        if (!data) {
+            r.diags.push_back({0, true, "cannot extract the script from the zip"});
+        } else {
+            r.diags = CheckSource(std::string(static_cast<const char*>(data), size));
+            mz_free(data);
+        }
+        out.push_back(std::move(r));
+    }
+    mz_zip_reader_end(&zip);
+
+    if (useCache && !key.empty() && !scripts.empty()) {
+        (void)asp::fs::createDirAll(cdir);
+        saveZipCached(cdir / (key + ".zipcheck"), out);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -499,56 +624,65 @@ std::vector<Diag> CheckSource(const std::string& src) {
     return diags;
 }
 
-std::vector<FileResult> CheckTree(const asp2::fs::Path& root, const asp2::fs::Path& cacheDir, bool useCache) {
-    std::vector<FileResult> out;
-    std::vector<asp2::fs::Path> files;
-    if (asp2::fs::isFile(root)) {
-        if (root.ext() == ".gd") files.push_back(root);
-    } else if (asp2::fs::isDir(root)) {
-        files = asp2::fs::listFilesRecursive(root, ".gd");
-        std::sort(files.begin(), files.end(), [](const asp2::fs::Path& a, const asp2::fs::Path& b) {
-            return a.str() < b.str();
-        });
-    }
-    const asp2::fs::Path cdir = cacheDir / "compile";
-    for (const asp2::fs::Path& f : files) {
-        FileResult r;
-        r.path = f;
-        std::string key;
-        if (useCache) {
-            const uint64_t h = asp2::fs::hashFile(f);
-            if (h != 0) {
-                key = std::string(kVersion) + "-" + hex16(h);
-                const asp2::fs::Path cp = cdir / (key + ".check");
-                if (asp2::fs::isFile(cp) && loadCached(cp, r.diags)) {
-                    r.cached = true;
-                    out.push_back(std::move(r));
-                    continue;
-                }
+// --- per-file + per-zip checking --------------------------------------------
+
+static void checkOneFile(const asp::fs::Path& f, const asp::fs::Path& cdir, bool useCache,
+                         std::string& cacheKey, std::vector<FileResult>& out) {
+    FileResult r;
+    r.path = f;
+    if (useCache) {
+        const uint64_t h = util::hashFile(f);
+        if (h != 0) {
+            cacheKey = std::string(kVersion) + "-" + hex16(h);
+            const asp::fs::Path cp = cdir / (cacheKey + ".check");
+            if (cp.isFile() && loadCached(cp, r.diags)) {
+                r.cached = true;
+                out.push_back(std::move(r));
+                return;
             }
         }
-        std::string src;
-        try {
-            src = asp2::fs::readText(f);
-        } catch (const std::exception& e) {
-            r.diags.push_back({0, true, std::string("cannot read file: ") + e.what()});
-            out.push_back(std::move(r));
-            continue;
-        }
-        r.diags = CheckSource(src);
-        if (useCache && !key.empty()) {
-            asp2::fs::makeDirs(cdir);
-            saveCached(cdir / (key + ".check"), r.diags);
-        }
-        out.push_back(std::move(r));
     }
+    auto res = asp::fs::readToString(f);
+    if (res.isErr()) {
+        r.diags.push_back({0, true, "cannot read file: " + util::errText(std::move(res))});
+        out.push_back(std::move(r));
+        return;
+    }
+    r.diags = CheckSource(std::move(res).unwrap());
+    if (useCache && !cacheKey.empty()) {
+        (void)asp::fs::createDirAll(cdir);
+        saveCached(cdir / (cacheKey + ".check"), r.diags);
+    }
+    out.push_back(std::move(r));
+}
+
+std::vector<FileResult> CheckTree(const asp::fs::Path& root, const asp::fs::Path& cacheDir, bool useCache) {
+    std::vector<FileResult> out;
+    const asp::fs::Path cdir = cacheDir / "compile";
+    const std::string rootExt(root.extension().value_or(""));
+    if (root.isFile()) {
+        std::string key;
+        if (rootExt == "gd") checkOneFile(root, cdir, useCache, key, out);
+        else if (rootExt == "zip") checkZip(root, cacheDir, useCache, out);
+        return out;
+    }
+    if (!root.isDir()) return out;
+
+    // Folder root: every .gd script (recursively) plus every .zip mod found on
+    // the way. mods/ holds both shapes, gd/ only ever holds loose scripts.
+    for (const asp::fs::Path& f : util::listFilesRecursive(root, ".gd")) {
+        std::string key;
+        checkOneFile(f, cdir, useCache, key, out);
+    }
+    for (const asp::fs::Path& z : util::listFilesRecursive(root, ".zip"))
+        checkZip(z, cacheDir, useCache, out);
     return out;
 }
 
-int CheckRoots(const std::vector<asp2::fs::Path>& roots, const asp2::fs::Path& cacheDir, const LogFn& log,
+int CheckRoots(const std::vector<asp::fs::Path>& roots, const asp::fs::Path& cacheDir, const LogFn& log,
                bool writeReport, bool useCache) {
     std::vector<FileResult> all;
-    for (const asp2::fs::Path& root : roots) {
+    for (const asp::fs::Path& root : roots) {
         std::vector<FileResult> part = CheckTree(root, cacheDir, useCache);
         all.insert(all.end(), part.begin(), part.end());
     }
@@ -561,7 +695,7 @@ int CheckRoots(const std::vector<asp2::fs::Path>& roots, const asp2::fs::Path& c
         errors += e;
         warnings += w;
         if (r.cached) ++cached;
-        std::string head = "  " + r.path.str();
+        std::string head = "  " + r.path.string();
         if (r.cached) head += " (cached)";
         head += e || w ? " : " + std::to_string(e) + " error(s), " + std::to_string(w) + " warning(s)" : " : ok";
         report += head + "\n";
@@ -577,24 +711,21 @@ int CheckRoots(const std::vector<asp2::fs::Path>& roots, const asp2::fs::Path& c
         for (const FileResult& r : all)
             for (const Diag& d : r.diags)
                 if (d.error)
-                    log(r.path.str() + ", line " + std::to_string(d.line) + ": " + describe(d));
+                    log(r.path.string() + ", line " + std::to_string(d.line) + ": " + describe(d));
         log(report);
     }
     if (writeReport && !cacheDir.empty()) {
-        try {
-            asp2::fs::makeDirs(cacheDir);
-            asp2::fs::writeText(cacheDir / "compile_report.txt", report);
-        } catch (...) {
-            // the report is a convenience, never a reason to fail
-        }
+        // the report is a convenience, never a reason to fail
+        (void)asp::fs::createDirAll(cacheDir);
+        (void)asp::fs::write(cacheDir / "compile_report.txt", report);
     }
     return errors;
 }
 
-int CheckLoaderScripts(const asp2::fs::Path& gameDir, const LogFn& log, bool useCache) {
+int CheckLoaderScripts(const asp::fs::Path& gameDir, const LogFn& log, bool useCache) {
     // Loader data lives next to the game: MachinePartyModLoader/ holds the
     // report and the verdict cache (modloader.log lands there too).
-    const asp2::fs::Path data = gameDir / "MachinePartyModLoader";
+    const asp::fs::Path data = gameDir / "MachinePartyModLoader";
     return CheckRoots({gameDir / "gd", gameDir / "mods"}, data / "cache", log, true, useCache);
 }
 

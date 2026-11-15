@@ -15,5 +15,6 @@ file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/embedded.cpp" CONTENT "${EMBED
 
 add_library(mpml_patch STATIC patch.cpp pck.cpp md5.cpp gdcheck.cpp "${CMAKE_CURRENT_BINARY_DIR}/embedded.cpp")
 target_include_directories(mpml_patch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(mpml_patch PUBLIC asp2)
+target_link_libraries(mpml_patch PUBLIC asp mpml_util mpml_settings miniz)
+target_link_libraries(mpml_patch PRIVATE mpml_warnings)
 set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/embedded.cpp" PROPERTIES GENERATED TRUE)

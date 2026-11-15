@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "asp2/fs.h"
+#include <asp/fs.hpp>
 
 namespace mpml {
 namespace pck {
@@ -39,7 +39,7 @@ struct Entry {
 
 class Pck {
 public:
-    explicit Pck(const asp2::fs::Path& path); // throws mpml::Error
+    explicit Pck(const asp::fs::Path& path); // throws mpml::Error
 
     int fmt() const { return fmt_; }
     uint32_t version(int i) const { return ver_[i]; }
@@ -52,19 +52,19 @@ public:
 
     // Format >= 3: append new data + new index to `target` (a byte-identical
     // copy of the file this object was parsed from) and repoint the header.
-    void appendPatchV3(const asp2::fs::Path& target);
+    void appendPatchV3(const asp::fs::Path& target);
     // Format < 3: write a complete rewritten pack to `out`.
-    void rewriteV2(const asp2::fs::Path& out);
+    void rewriteV2(const asp::fs::Path& out);
 
 private:
     bool rel() const { return (flags_ & kPackRelFilebase) != 0; }
     std::string norm(const std::string& p) const;
     const Entry* find(const std::string& resPath) const;
-    void locateDirectoryV3(const uint8_t* head, size_t headLen, asp2::fs::File& f);
-    bool parseDirectory(asp2::fs::File& f, uint64_t start, bool hasCount, std::vector<Entry>& out) const;
+    void locateDirectoryV3(const uint8_t* head, size_t headLen, asp::fs::File& f);
+    bool parseDirectory(asp::fs::File& f, uint64_t start, bool hasCount, std::vector<Entry>& out) const;
     std::vector<uint8_t> encodeIndex(const std::vector<Entry>& entries) const;
 
-    asp2::fs::Path path_;
+    asp::fs::Path path_;
     uint64_t filesize_ = 0;
     std::vector<Entry> entries_;
     int fmt_ = 2;

@@ -15,9 +15,11 @@
 #include <windows.h>
 
 #include "MinHook.h"
-#include "asp2/fs.h"
+#include <asp/fs.hpp>
 #include "logger/logger.hpp"
 #include "patch.h"
+#include "settings/settings.hpp"
+#include "util/util.hpp"
 
 extern "C" BOOL InitializeProxy();
 
@@ -121,13 +123,32 @@ bool InstallHook(const char *name, void *detour, void **original) {
         return true;
 }
 
+// settings::Values.console = true -> give the (windowed) game a console so the
+// loader logs are visible live. Off by default; flipped by loader.cfg.
+void EnableConsole() {
+        if (!AllocConsole())
+                return;
+        // plain freopen: works on MSVC and MinGW alike (_CRT_SECURE_NO_WARNINGS
+        // is set project-wide, so MSVC stays quiet about it)
+        if (!freopen("CONOUT$", "w", stdout))
+                return;
+        if (!freopen("CONOUT$", "w", stderr))
+                return;
+        (void)freopen("CONIN$", "r", stdin);
+        SetConsoleTitleW(L"Machine Party mod loader");
+}
+
 void Run() {
-        const asp2::fs::Path exe = asp2::fs::executablePath();
+        const asp::fs::Path exe = util::executablePath();
         if (exe.empty())
                 return;
 
-        g_log.setFile(exe.parent() / "mpml_proxy.log");
-        Log("proxy loaded in: " + exe.str()); // proves Windows loaded this DLL
+        const asp::fs::Path gameDir = util::parentOf(exe);
+        if (mpml::settings::load(mpml::settings::fileFor(gameDir)).console)
+                EnableConsole();
+
+        g_log.setFile(gameDir / "mpml_proxy.log");
+        Log("proxy loaded in: " + exe.string()); // proves Windows loaded this DLL
 
         auto paths = PathsFromExe(exe);
         if (!paths) {
@@ -141,10 +162,10 @@ void Run() {
                 Log("patching failed, starting vanilla: " + r.message);
                 return;
         }
-        EnsureLoaderFolders(paths->original.parent(), Log);
+        EnsureLoaderFolders(util::parentOf(paths->original), Log);
 
-        g_originalFull = paths->original.wstr();
-        g_moddedFull = paths->modded.wstr();
+        g_originalFull = paths->original.native();
+        g_moddedFull = paths->modded.native();
         Log("original: " + Narrow(FullPath(g_originalFull.c_str()).c_str()));
         Log("modded:   " + Narrow(FullPath(g_moddedFull.c_str()).c_str()));
 

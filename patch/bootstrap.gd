@@ -27,6 +27,11 @@ var _node_added_hooks: Array[Callable] = []
 var _pending_autoloads: Dictionary = {}
 var _watching: bool = false
 
+# --- zip mods ---------------------------------------------------------------
+# zip file path -> ZIPReader (kept open for the whole session so mod scripts
+# can be compiled from inside the archive at any time)
+var _zip_readers: Dictionary = {}
+
 
 func _init() -> void:
         mods_root = _resolve_mods_root()
@@ -153,11 +158,118 @@ func _discover() -> void:
                         "node": null,
                 })
 
+        # A mod can also be a single .zip file sitting in mods/.
+        for f in d.get_files():
+                var fname := str(f)
+                if fname.begins_with(".") or not fname.to_lower().ends_with(".zip"):
+                        continue
+                var zm := _zip_mod(mods_root.path_join(fname))
+                if zm.is_empty():
+                        continue
+                if _has_id(found, str(zm["id"])):
+                        note("skip %s: mod id '%s' already loaded from a folder" % [fname, zm["id"]])
+                        continue
+                found.append(zm)
+
         found.sort_custom(func(a, b):
                 if a["priority"] == b["priority"]:
                         return str(a["id"]) < str(b["id"])
                 return a["priority"] < b["priority"])
         mods = found
+
+
+func _has_id(arr: Array, id: String) -> bool:
+        for m in arr:
+                if str(m["id"]) == id:
+                        return true
+        return false
+
+
+# --- zip mods ----------------------------------------------------------------
+# The zip needs a mod.json at its root ("mod.json") or inside one wrapping
+# folder ("ModName-main/mod.json", like a "Download ZIP" from a git host).
+# Everything else (entry script, other files) is resolved relative to that
+# folder. The reader stays open so scripts inside the zip can be compiled at
+# any time via compile() / register_script() / override_script().
+
+func _zip_base(z: ZIPReader) -> String:
+        # Returns "" when mod.json sits at the zip root, the wrapping folder
+        # ("Folder/", with trailing slash) otherwise, or "!" when there is none.
+        var best := "!"
+        var best_depth := 1 << 30
+        for f in z.get_files():
+                var p := str(f)
+                if not (p == "mod.json" or p.ends_with("/mod.json")):
+                        continue
+                var depth := p.split("/", false).size()
+                if depth < best_depth:
+                        best_depth = depth
+                        best = "" if p == "mod.json" else p.substr(0, p.length() - "mod.json".length())
+        return best
+
+func _zip_mod(zip_path: String) -> Dictionary:
+        var zip_name := zip_path.get_file()
+        var z := ZIPReader.new()
+        if z.open(zip_path) != OK:
+                note("skip %s: cannot open the zip" % zip_name)
+                return {}
+        var base := _zip_base(z)
+        if base == "!":
+                note("skip %s: no mod.json inside" % zip_name)
+                return {}
+
+        var raw: PackedByteArray = z.read_file(base + "mod.json")
+        var parsed = JSON.parse_string(raw.get_string_from_utf8())
+        if typeof(parsed) != TYPE_DICTIONARY:
+                note("skip %s: mod.json is not valid JSON" % zip_name)
+                return {}
+
+        var entry: String = str(parsed.get("entry", "main.gd"))
+        var entry_path := base + entry
+        if not z.file_exists(entry_path):
+                note("skip %s: entry script '%s' is not in the zip" % [zip_name, entry])
+                return {}
+
+        var fallback := zip_name.get_basename()
+        _zip_readers[zip_path] = z
+        note("found zip mod %s v%s" % [str(parsed.get("id", fallback)), str(parsed.get("version", "0.0.0"))])
+        return {
+                "id": str(parsed.get("id", fallback)),
+                "name": str(parsed.get("name", fallback)),
+                "version": str(parsed.get("version", "0.0.0")),
+                "entry": entry_path,   # zip-internal path; dir is the zip itself
+                "priority": int(parsed.get("priority", 0)),
+                "requires": parsed.get("requires", []),
+                "dir": zip_path,
+                "zip_base": base,
+                "node": null,
+        }
+
+func _zip_read(path: String) -> String:
+        # Resolves "<zip>/inner/path.gd" (the shape dir_of() + path_join() produce
+        # for zip mods) against the open reader, honouring the wrapping folder.
+        if _zip_readers.is_empty():
+                return ""
+        for zip_path in _zip_readers:
+                var zp := str(zip_path)
+                if not (path == zp or path.begins_with(zp + "/")):
+                        continue
+                var z: ZIPReader = _zip_readers[zip_path]
+                var inner := path.substr(zp.length())
+                if inner.begins_with("/"):
+                        inner = inner.substr(1)
+                var base := ""
+                for m in mods:
+                        if str(m["dir"]) == zp and m.has("zip_base"):
+                                base = str(m["zip_base"])
+                var candidates: Array = [inner]
+                if not base.is_empty() and not inner.begins_with(base):
+                        candidates.append(base + inner)
+                for c in candidates:
+                        if z.file_exists(str(c)):
+                                return z.read_file(str(c)).get_string_from_utf8()
+                return ""
+        return ""
 
 func _start_mods() -> void:
         var present := {}
@@ -193,12 +305,11 @@ func _start_mods() -> void:
 
 
 func compile(path: String) -> GDScript:
-        if not FileAccess.file_exists(path):
-                note("missing script: " + path)
-                return null
-        var src := FileAccess.get_file_as_string(path)
+        var src := _zip_read(path)
+        if src.is_empty() and FileAccess.file_exists(path):
+                src = FileAccess.get_file_as_string(path)
         if src.is_empty():
-                note("empty script: " + path)
+                note("missing or empty script: " + path)
                 return null
         var s := GDScript.new()
         s.source_code = src
@@ -250,7 +361,9 @@ func mount_assets(mod_id: String, rel_zip: String) -> bool:
         if d.is_empty():
                 note("mount_assets: unknown mod " + mod_id)
                 return false
-        var pack_path := d.path_join(rel_zip)
+        # A zip mod can mount itself with an empty rel_zip; folder mods join the
+        # relative path as before.
+        var pack_path := d if rel_zip.is_empty() else d.path_join(rel_zip)
         if not FileAccess.file_exists(pack_path):
                 note("mount_assets: no pack at " + pack_path)
                 return false

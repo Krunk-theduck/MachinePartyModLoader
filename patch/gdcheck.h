@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "asp2/fs.h"
+#include <asp/fs.hpp>
 #include "patch.h" // LogFn
 
 namespace mpml {
@@ -36,7 +36,7 @@ struct Diag {
 std::vector<Diag> CheckSource(const std::string& src);
 
 struct FileResult {
-    asp2::fs::Path path;
+    asp::fs::Path path;
     bool cached = false; // verdict replayed from cache/compile/
     std::vector<Diag> diags;
 };
@@ -44,16 +44,16 @@ struct FileResult {
 // Check every .gd script under `root` (a file or a folder, recursive, sorted).
 // With useCache the per-file verdict is stored in / replayed from
 // cacheDir/compile/, so unchanged scripts are not re-parsed.
-std::vector<FileResult> CheckTree(const asp2::fs::Path& root, const asp2::fs::Path& cacheDir,
+std::vector<FileResult> CheckTree(const asp::fs::Path& root, const asp::fs::Path& cacheDir,
                                   bool useCache);
 
 // Check arbitrary roots (the --compile target). Returns the number of errors.
-int CheckRoots(const std::vector<asp2::fs::Path>& roots, const asp2::fs::Path& cacheDir,
+int CheckRoots(const std::vector<asp::fs::Path>& roots, const asp::fs::Path& cacheDir,
                const LogFn& log, bool writeReport, bool useCache);
 
 // Check gd/ + mods/ next to the game exe, log a summary and every error, and
 // write MachinePartyModLoader/compile_report.txt. Returns the number of errors.
-int CheckLoaderScripts(const asp2::fs::Path& gameDir, const LogFn& log, bool useCache);
+int CheckLoaderScripts(const asp::fs::Path& gameDir, const LogFn& log, bool useCache);
 
 } // namespace gd
 } // namespace mpml

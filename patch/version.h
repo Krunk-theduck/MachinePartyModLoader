@@ -9,6 +9,6 @@
 
 namespace mpml {
 
-inline constexpr char kVersion[] = "6";
+inline constexpr char kVersion[] = "7";
 
 } // namespace mpml

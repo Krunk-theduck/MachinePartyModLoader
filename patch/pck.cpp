@@ -3,9 +3,12 @@
 #include <algorithm>
 #include <cstring>
 #include <set>
+#include <type_traits>
+#include <utility>
 
 #include "md5.h"
 #include "patch.h" // mpml::Error
+#include "util/util.hpp"
 
 namespace mpml {
 namespace pck {
@@ -15,6 +18,18 @@ namespace Detail {
 constexpr uint64_t kIndexStartV2 = 96; // python: V2_INDEX_START - 4
 constexpr size_t kOffFormat = 4, kOffVersion = 8, kOffFlags = 20, kOffFileBase = 24, kOffDirOffset = 32;
 constexpr size_t kChunk = 1 << 20;
+
+// asp2 speaks Result; the pck layer speaks exceptions. This maps one onto the
+// other, keeping the parse code free of error checks at every line.
+template <typename T> requires (!std::is_void_v<T>)
+T expect(asp::fs::Result<T>&& r, const std::string& what) {
+    if (r.isErr()) throw Error(what + ": " + util::errText(std::move(r)));
+    return std::move(r).unwrap();
+}
+
+void expect(asp::fs::Result<>&& r, const std::string& what) {
+    if (r.isErr()) throw Error(what + ": " + util::errText(std::move(r)));
+}
 
 std::vector<uint8_t> pad4(const std::string& s) {
     std::vector<uint8_t> b(s.begin(), s.end());
@@ -52,15 +67,16 @@ bool validUtf8(const std::string& s) {
 // the call sites unqualified (this is a .cpp, so nothing leaks anywhere).
 using namespace Detail;
 
-Pck::Pck(const asp2::fs::Path& path) : path_(path) {
-    if (!asp2::fs::isFile(path_))
-        throw Error("pck not found: " + path_.str());
-    filesize_ = asp2::fs::fileSize(path_);
-    asp2::fs::File f(path_, "rb");
+Pck::Pck(const asp::fs::Path& path) : path_(path) {
+    if (!path_.isFile())
+        throw Error("pck not found: " + path_.string());
+    filesize_ = util::fileSizeOr0(path_);
+    asp::fs::File f = expect(asp::fs::File::open(path_), "cannot open " + path_.string());
     uint8_t head[256] = {0};
-    size_t hn = f.read(head, sizeof head);
+    size_t hn = expect(f.read(std::span<uint8_t>(head, sizeof head)),
+                       "cannot read " + path_.string());
     if (hn < 32 || std::memcmp(head, "GDPC", 4) != 0)
-        throw Error(path_.name() +
+        throw Error(util::nameOf(path_) +
                     " does not start with GDPC - it is probably embedded inside the .exe, "
                     "which this tool cannot patch.");
     fmt_ = int(le32(head + kOffFormat));
@@ -81,7 +97,7 @@ Pck::Pck(const asp2::fs::Path& path) : path_(path) {
     if (!entries_.empty()) resPrefix_ = entries_[0].path.rfind("res://", 0) == 0;
 }
 
-void Pck::locateDirectoryV3(const uint8_t* head, size_t headLen, asp2::fs::File& f) {
+void Pck::locateDirectoryV3(const uint8_t* head, size_t headLen, asp::fs::File& f) {
     struct Cand { int field; uint64_t base, target; };
     std::vector<Cand> cands;
     std::set<int> seen;
@@ -115,15 +131,15 @@ void Pck::locateDirectoryV3(const uint8_t* head, size_t headLen, asp2::fs::File&
                 std::to_string(fmt_) + ", which this tool does not fully understand.");
 }
 
-bool Pck::parseDirectory(asp2::fs::File& f, uint64_t start, bool hasCount, std::vector<Entry>& out) const {
+bool Pck::parseDirectory(asp::fs::File& f, uint64_t start, bool hasCount, std::vector<Entry>& out) const {
     if (start >= filesize_) return false;
     const uint64_t region = filesize_ - start;
     uint64_t pos = 0;
-    f.seek(int64_t(start));
+    expect(f.seek(start), "cannot seek in " + path_.string());
 
     auto need = [&](uint64_t n) { return pos + n <= region; };
-    auto rd32 = [&]() { uint8_t b[4]; f.readExact(b, 4); pos += 4; return le32(b); };
-    auto rd64 = [&]() { uint8_t b[8]; f.readExact(b, 8); pos += 8; return le64(b); };
+    auto rd32 = [&]() { uint8_t b[4]; expect(f.readExact(std::span<uint8_t>(b, 4)), "truncated index in " + path_.string()); pos += 4; return le32(b); };
+    auto rd64 = [&]() { uint8_t b[8]; expect(f.readExact(std::span<uint8_t>(b, 8)), "truncated index in " + path_.string()); pos += 8; return le64(b); };
 
     uint64_t count = 0;
     if (hasCount) {
@@ -140,7 +156,8 @@ bool Pck::parseDirectory(asp2::fs::File& f, uint64_t start, bool hasCount, std::
         if (plen < 4 || plen > 4096 || plen % 4 != 0) return false;
         if (!need(plen)) return false;
         std::string raw(plen, '\0');
-        f.readExact(raw.data(), plen);
+        expect(f.readExact(std::span<uint8_t>(reinterpret_cast<uint8_t*>(raw.data()), plen)),
+               "truncated index in " + path_.string());
         pos += plen;
         while (!raw.empty() && raw.back() == '\0') raw.pop_back();
         if (raw.empty() || !Detail::validUtf8(raw)) return false;
@@ -150,7 +167,8 @@ bool Pck::parseDirectory(asp2::fs::File& f, uint64_t start, bool hasCount, std::
         e.path = std::move(raw);
         uint64_t off = rd64();
         e.size = rd64();
-        f.readExact(e.md5.data(), 16);
+        expect(f.readExact(std::span<uint8_t>(e.md5.data(), e.md5.size())),
+               "truncated index in " + path_.string());
         pos += 16;
         if (fmt_ >= 2) e.flags = rd32();
         e.offset = off + (rel() ? fileBase_ : 0);
@@ -180,10 +198,11 @@ bool Pck::readFile(const std::string& resPath, std::vector<uint8_t>& out) const 
     const Entry* e = find(resPath);
     if (!e) return false;
     if (e->hasData) { out = e->data; return true; }
-    asp2::fs::File f(path_, "rb");
-    f.seek(int64_t(e->offset));
+    asp::fs::File f = expect(asp::fs::File::open(path_), "cannot open " + path_.string());
+    expect(f.seek(e->offset), "cannot seek in " + path_.string());
     out.assign(e->size, 0);
-    f.readExact(out.data(), out.size());
+    expect(f.readExact(std::span<uint8_t>(out.data(), out.size())),
+           "cannot read " + path_.string());
     return true;
 }
 
@@ -224,27 +243,34 @@ static std::vector<Entry> sortedByPath(std::vector<Entry> v) {
     return v;
 }
 
-void Pck::appendPatchV3(const asp2::fs::Path& target) {
-    asp2::fs::File f(target, "r+b");
-    f.seek(0, SEEK_END);
+void Pck::appendPatchV3(const asp::fs::Path& target) {
+    asp::fs::OpenOptions opts;
+    opts.read = true;
+    opts.write = true;
+    asp::fs::File f = expect(asp::fs::File::open(target, opts), "cannot reopen " + target.string());
+    expect(f.seek(expect(f.size(), "cannot size " + target.string())),
+           "cannot seek to the end of " + target.string());
     for (Entry& e : entries_) {
         if (!e.hasData) continue;
-        e.offset = uint64_t(f.tell());
-        f.write(e.data.data(), e.data.size());
+        e.offset = expect(f.tell(), "cannot tell in " + target.string());
+        expect(f.writeAll(std::span<const uint8_t>(e.data.data(), e.data.size())),
+               "cannot write " + target.string());
     }
-    uint64_t newDir = uint64_t(f.tell());
+    const uint64_t newDir = expect(f.tell(), "cannot tell in " + target.string());
     std::vector<uint8_t> index = encodeIndex(sortedByPath(entries_));
-    f.write(index.data(), index.size());
-    f.flushSync();
+    expect(f.writeAll(std::span<const uint8_t>(index.data(), index.size())),
+           "cannot write the index to " + target.string());
+    expect(f.sync(), "cannot flush " + target.string());
 
     std::vector<uint8_t> ptr;
     put64(ptr, newDir - dirFieldBase_);
-    f.seek(dirField_);
-    f.write(ptr.data(), ptr.size());
-    f.flushSync();
+    expect(f.seek(uint64_t(dirField_)), "cannot seek to the header pointer in " + target.string());
+    expect(f.writeAll(std::span<const uint8_t>(ptr.data(), ptr.size())),
+           "cannot repoint the header of " + target.string());
+    expect(f.sync(), "cannot flush " + target.string());
 }
 
-void Pck::rewriteV2(const asp2::fs::Path& outPath) {
+void Pck::rewriteV2(const asp::fs::Path& outPath) {
     std::vector<Entry> entries = sortedByPath(entries_);
     uint64_t indexSize = 4;
     for (const Entry& e : entries) indexSize += 4 + Detail::pad4(e.path).size() + 8 + 8 + 16 + 4;
@@ -257,32 +283,40 @@ void Pck::rewriteV2(const asp2::fs::Path& outPath) {
     fileBase_ = 0;
     fmt_ = 2;
 
-    asp2::fs::File out(outPath, "wb");
+    asp::fs::File out = expect(asp::fs::File::create(outPath), "cannot create " + outPath.string());
     std::vector<uint8_t> hdr = {'G', 'D', 'P', 'C'};
     put32(hdr, 2);
     for (int i = 0; i < 3; ++i) put32(hdr, ver_[i]);
     put32(hdr, 0);
     put64(hdr, 0);
     hdr.resize(hdr.size() + 64, 0);
-    out.write(hdr.data(), hdr.size());
+    expect(out.writeAll(std::span<const uint8_t>(hdr.data(), hdr.size())),
+           "cannot write " + outPath.string());
     std::vector<uint8_t> index = encodeIndex(entries);
-    out.write(index.data(), index.size());
+    expect(out.writeAll(std::span<const uint8_t>(index.data(), index.size())),
+           "cannot write " + outPath.string());
 
-    asp2::fs::File src(path_, "rb");
+    asp::fs::File src = expect(asp::fs::File::open(path_), "cannot open " + path_.string());
     std::vector<uint8_t> buf(Detail::kChunk);
     for (size_t i = 0; i < entries.size(); ++i) {
         const Entry& e = entries[i];
-        if (e.hasData) { out.write(e.data.data(), e.data.size()); continue; }
-        src.seek(int64_t(old[i]));
+        if (e.hasData) {
+            expect(out.writeAll(std::span<const uint8_t>(e.data.data(), e.data.size())),
+                   "cannot write " + outPath.string());
+            continue;
+        }
+        expect(src.seek(old[i]), "cannot seek in " + path_.string());
         uint64_t left = e.size;
         while (left) {
             size_t n = size_t(std::min<uint64_t>(Detail::kChunk, left));
-            src.readExact(buf.data(), n);
-            out.write(buf.data(), n);
+            expect(src.readExact(std::span<uint8_t>(buf.data(), n)),
+                   "cannot copy data from " + path_.string());
+            expect(out.writeAll(std::span<const uint8_t>(buf.data(), n)),
+                   "cannot write " + outPath.string());
             left -= n;
         }
     }
-    out.flushSync();
+    expect(out.sync(), "cannot flush " + outPath.string());
 }
 
 // ---- project.binary (ECFG) ------------------------------------------------

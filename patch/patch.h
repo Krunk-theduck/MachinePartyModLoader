@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "asp2/fs.h"
+#include <asp/fs.hpp>
 
 namespace mpml {
 
@@ -20,9 +20,9 @@ struct Error : std::runtime_error {
 using LogFn = std::function<void(const std::string&)>;
 
 struct Paths {
-    asp2::fs::Path original; // e.g. "Machine Party.pck"     (never touched)
-    asp2::fs::Path modded;   // e.g. "Machine Party.modded.pck"
-    asp2::fs::Path record() const;
+    asp::fs::Path original; // e.g. "Machine Party.pck"     (never touched)
+    asp::fs::Path modded;   // e.g. "Machine Party.modded.pck"
+    asp::fs::Path record() const;
 };
 
 struct Result {
@@ -32,7 +32,7 @@ struct Result {
 };
 
 // Find the game's .pck next to `gameExe` (prefers "<exe name>.pck").
-std::optional<Paths> PathsFromExe(const asp2::fs::Path& gameExe);
+std::optional<Paths> PathsFromExe(const asp::fs::Path& gameExe);
 
 // Cheap check first (size + mtime), then a hash of the original, and only
 // rebuild the modded copy when the game's pck really changed or the
@@ -40,8 +40,9 @@ std::optional<Paths> PathsFromExe(const asp2::fs::Path& gameExe);
 Result EnsureModdedPck(const Paths& paths, const LogFn& log = nullptr);
 
 // Creates the loader folders next to the game: mods/ (with the example
-// console mod when new) and gd/ (with one example loose script when new).
-void EnsureLoaderFolders(const asp2::fs::Path& gameDir, const LogFn& log = nullptr);
+// console mod when new), gd/ (with one example loose script when new) and
+// MachinePartyModLoader/loader.cfg (the settings file, defaults only).
+void EnsureLoaderFolders(const asp::fs::Path& gameDir, const LogFn& log = nullptr);
 
 // Remove the modded pck and its record.
 void RemoveModded(const Paths& paths, const LogFn& log = nullptr);

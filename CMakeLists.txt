@@ -1,7 +1,9 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.24)
 project(MPML C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# asp2 uses C++23 features in its public headers (deducing this), so every
+# target that touches it builds as C++23. MSVC: VS 2022 17.13+ recommended.
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Static CRT on MSVC: no vcruntime DLL dependency, and the proxy DLL can run before anything else loads.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -11,8 +13,53 @@ if(WIN32)
   enable_language(RC) # version resources for the launcher and the proxy DLL
 endif()
 
-add_subdirectory(asp2)    # asp2::fs - the file API everything uses
-add_subdirectory(Global)  # mpml_logger - shared by launcher + proxy
+# ---------------------------------------------------------------------------
+# asp2 - https://github.com/dankmeme01/asp2 (include/asp/fs)
+#
+# The one file API everything uses (asp::fs::Path / File / BufferedFile / ...).
+# Fetched at configure time and pinned to a known commit so builds stay
+# reproducible. Its own dependencies (fmt, geode::result, nontype_functional)
+# are pulled by asp2 itself through CPM. Network access is needed once; CMake
+# caches the sources afterwards.
+# ---------------------------------------------------------------------------
+include(FetchContent)
+FetchContent_Declare(asp2
+  GIT_REPOSITORY https://github.com/dankmeme01/asp2.git
+  GIT_TAG        28d057e964dddad5fbadefbdb9ecb70b5d5b03d5
+  GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(asp2) # static target: asp
+
+# ---------------------------------------------------------------------------
+# miniz - reads .zip mods inside the --compile script check
+# (the game itself opens zips at runtime with Godot's ZIPReader).
+# miniz 3.0.2's CMakeLists predates CMake 4's minimum-version cutoff, so tell
+# newer CMake to accept it. Older CMake simply ignores the variable.
+# ---------------------------------------------------------------------------
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+set(MINIZ_STANDALONE_PROJECT OFF)
+FetchContent_Declare(miniz
+  GIT_REPOSITORY https://github.com/richgel999/miniz.git
+  GIT_TAG        3.0.2
+  GIT_SHALLOW    TRUE
+)
+set(BUILD_EXAMPLES OFF)
+set(BUILD_FUZZERS OFF)
+set(AMALGAMATE_SOURCES OFF)
+set(BUILD_HEADER_ONLY OFF)
+set(INSTALL_PROJECT OFF)
+FetchContent_MakeAvailable(miniz) # static target: miniz
+unset(CMAKE_POLICY_VERSION_MINIMUM)
+
+# Warning level for OUR targets only (third-party code builds with its own).
+add_library(mpml_warnings INTERFACE)
+if(MSVC)
+  target_compile_options(mpml_warnings INTERFACE /W4)
+else()
+  target_compile_options(mpml_warnings INTERFACE -Wall -Wextra)
+endif()
+
+add_subdirectory(Global)  # mpml_util + mpml_settings + mpml_logger
 add_subdirectory(patch)   # mpml core (patcher, pck, gd check)
 add_subdirectory(main)    # launcher
 if(WIN32)

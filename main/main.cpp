@@ -10,7 +10,7 @@
 //   MachinePartyModLoader                 patch now (standalone), create mods/ + gd/
 //   MachinePartyModLoader --play          ...and then start the game
 //   MachinePartyModLoader --compile [p]   compile-check .gd scripts (gd/ + mods/,
-//                                         or one file/folder), exit 1 on errors
+//                                         or one file/folder/zip), exit 1 on errors
 //   MachinePartyModLoader --uninstall     delete the modded pck + record
 #include <algorithm>
 #include <cerrno>
@@ -21,10 +21,11 @@
 #include <string>
 #include <vector>
 
-#include "asp2/fs.h"
+#include <asp/fs.hpp>
 #include "logger/logger.hpp"
 #include "patch.h"
 #include "gdcheck.h"
+#include "util/util.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -41,13 +42,15 @@ void Log(const std::string& s) { g_log.log(s); }
 
 namespace Detail {
 
-std::vector<asp2::fs::Path> GetArgs(int argc, char** argv) {
-    std::vector<asp2::fs::Path> out;
+namespace fs = asp::fs;
+
+std::vector<fs::Path> GetArgs(int argc, char** argv) {
+    std::vector<fs::Path> out;
 #ifdef _WIN32
     (void)argc; (void)argv;
     int n = 0;
     LPWSTR* w = CommandLineToArgvW(GetCommandLineW(), &n);
-    for (int i = 0; i < n; ++i) out.emplace_back(std::wstring(w[i]));
+    for (int i = 0; i < n; ++i) out.emplace_back(fs::Path::fromWide(std::wstring(w[i])));
     LocalFree(w);
 #else
     for (int i = 0; i < argc; ++i) out.emplace_back(argv[i]);
@@ -72,11 +75,11 @@ void QuoteArg(std::wstring& out, const std::wstring& a) {
 #endif
 
 // Run the command and (on Windows) wait for it; on POSIX replace this process.
-int Launch(const std::vector<asp2::fs::Path>& cmd) {
+int Launch(const std::vector<fs::Path>& cmd) {
     if (cmd.empty()) return 1;
 #ifdef _WIN32
     std::wstring line;
-    for (size_t i = 0; i < cmd.size(); ++i) { if (i) line += L' '; QuoteArg(line, cmd[i].wstr()); }
+    for (size_t i = 0; i < cmd.size(); ++i) { if (i) line += L' '; QuoteArg(line, cmd[i].native()); }
     STARTUPINFOW si{}; si.cb = sizeof si;
     PROCESS_INFORMATION pi{};
     if (!CreateProcessW(nullptr, line.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
@@ -89,11 +92,16 @@ int Launch(const std::vector<asp2::fs::Path>& cmd) {
     CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
     return int(code);
 #else
-    std::vector<asp2::fs::Path> abs;
-    abs.push_back(cmd[0].isAbsolute() ? cmd[0] : cmd[0].absolute()); // execvp only searches PATH
+    std::vector<fs::Path> abs;
+    fs::Path first = cmd[0];
+    if (!first.isAbsolute()) {
+        auto a = first.absolute();
+        if (a.isOk()) first = std::move(a).unwrap(); // execvp only searches PATH
+    }
+    abs.push_back(first);
     abs.insert(abs.end(), cmd.begin() + 1, cmd.end());
     std::vector<std::string> s;
-    for (auto& p : abs) s.push_back(p.str());
+    for (auto& p : abs) s.push_back(p.string());
     std::vector<char*> argv;
     for (auto& x : s) argv.push_back(x.data());
     argv.push_back(nullptr);
@@ -103,40 +111,40 @@ int Launch(const std::vector<asp2::fs::Path>& cmd) {
 #endif
 }
 
-bool IsFlag(const asp2::fs::Path& p) { return p.str().rfind("--", 0) == 0; }
+bool IsFlag(const fs::Path& p) { return p.string().rfind("--", 0) == 0; }
 
-bool HasMainPack(const std::vector<asp2::fs::Path>& v) {
-    for (auto& p : v) if (p.str() == "--main-pack") return true;
+bool HasMainPack(const std::vector<fs::Path>& v) {
+    for (auto& p : v) if (p.string() == "--main-pack") return true;
     return false;
 }
 
 // The game exe candidates in one folder (skips loader/crash-handler tools and
 // the running loader itself).
-std::vector<asp2::fs::Path> GameExeCandidatesIn(const asp2::fs::Path& dir, const asp2::fs::Path& self) {
-    std::vector<asp2::fs::Path> c;
-    for (const asp2::fs::Path& p : asp2::fs::listDir(dir)) {
-        std::string n = p.name();
+std::vector<fs::Path> GameExeCandidatesIn(const fs::Path& dir, const fs::Path& self) {
+    std::vector<fs::Path> c;
+    for (const fs::Path& p : util::listDirSorted(dir)) {
+        std::string n = util::nameOf(p);
         for (auto& ch : n) ch = char(std::tolower(static_cast<unsigned char>(ch)));
         if (n.find("modloader") != std::string::npos || n.find("crash") != std::string::npos) continue;
-        if (!self.empty() && p.absolute().str() == self.absolute().str()) continue;
+        if (!self.empty() && util::absString(p) == util::absString(self)) continue;
 #ifdef _WIN32
-        if (p.ext() == ".exe") c.push_back(p);
+        if (p.extension().value_or("") == "exe") c.push_back(p);
 #else
-        if (p.ext().empty() && p.isFile() && asp2::fs::canExecute(p)) c.push_back(p);
+        if (p.extension().value_or("").empty() && p.isFile() && util::canExecute(p)) c.push_back(p);
 #endif
     }
-    return c; // listDir is sorted, so candidates are too
+    return c; // listDirSorted is sorted, so candidates are too
 }
 
 // Standalone: find the game exe beside the loader. When the loader lives
 // inside the MachinePartyModLoader folder (Linux cannot have the binary AND
 // that folder side by side - same name), also look one level up. A candidate
 // only counts when a matching .pck sits next to it.
-std::optional<asp2::fs::Path> FindGameExeBeside(const asp2::fs::Path& dir, const asp2::fs::Path& self) {
-    const asp2::fs::Path up = dir.parent();
-    for (const asp2::fs::Path* scan : {&dir, &up}) {
+std::optional<fs::Path> FindGameExeBeside(const fs::Path& dir, const fs::Path& self) {
+    const fs::Path up = util::parentOf(dir);
+    for (const fs::Path* scan : {&dir, &up}) {
         if (scan->empty()) continue;
-        for (const asp2::fs::Path& cand : GameExeCandidatesIn(*scan, self)) {
+        for (const fs::Path& cand : GameExeCandidatesIn(*scan, self)) {
             if (PathsFromExe(cand)) return cand;
         }
     }
@@ -145,10 +153,10 @@ std::optional<asp2::fs::Path> FindGameExeBeside(const asp2::fs::Path& dir, const
 
 // Best guess at the game dir when no pck is around: the folder that holds
 // mods/ or gd/ (the loader may sit inside MachinePartyModLoader/ on Linux).
-asp2::fs::Path GuessGameDir(const asp2::fs::Path& dir) {
-    const asp2::fs::Path up = dir.parent();
-    for (const asp2::fs::Path* d : {&dir, &up}) {
-        if (asp2::fs::isDir(*d / "mods") || asp2::fs::isDir(*d / "gd")) return *d;
+fs::Path GuessGameDir(const fs::Path& dir) {
+    const fs::Path up = util::parentOf(dir);
+    for (const fs::Path* d : {&dir, &up}) {
+        if ((*d / "mods").isDir() || (*d / "gd").isDir()) return *d;
     }
     return dir;
 }
@@ -156,13 +164,13 @@ asp2::fs::Path GuessGameDir(const asp2::fs::Path& dir) {
 } // namespace Detail
 
 int main(int argc, char** argv) {
-    std::vector<asp2::fs::Path> args = Detail::GetArgs(argc, argv);
-    std::vector<asp2::fs::Path> rest(args.begin() + (args.empty() ? 0 : 1), args.end());
+    std::vector<asp::fs::Path> args = Detail::GetArgs(argc, argv);
+    std::vector<asp::fs::Path> rest(args.begin() + (args.empty() ? 0 : 1), args.end());
 
     bool uninstall = false, play = false, compile = false;
-    std::optional<asp2::fs::Path> compileTarget;
+    std::optional<asp::fs::Path> compileTarget;
     for (size_t i = 0; i < rest.size(); ++i) {
-        const asp2::fs::Path& a = rest[i];
+        const asp::fs::Path& a = rest[i];
         if (a == "--uninstall") uninstall = true;
         if (a == "--play") play = true;
         if (a == "--compile") compile = true;
@@ -175,14 +183,14 @@ int main(int argc, char** argv) {
     if (!rest.empty() && !Detail::IsFlag(rest[0])) {
         std::optional<Paths> paths;
         for (auto& a : rest) {
-            if (!Detail::IsFlag(a) && asp2::fs::isFile(a)) {
-                paths = PathsFromExe(a.absolute());
+            if (!Detail::IsFlag(a) && a.isFile()) {
+                paths = PathsFromExe(util::absOf(a));
                 if (paths) break;
             }
         }
-        std::vector<asp2::fs::Path> cmd = rest;
+        std::vector<asp::fs::Path> cmd = rest;
         if (paths) {
-            const asp2::fs::Path gameDir = paths->original.parent();
+            const asp::fs::Path gameDir = util::parentOf(paths->original);
             g_log.setFile(gameDir / "mpml.log");
             Result r = EnsureModdedPck(*paths, Log);
             if (r.ok) {
@@ -203,18 +211,18 @@ int main(int argc, char** argv) {
 
     // Standalone mode.
     std::printf("\nMachine Party mod loader\n");
-    const asp2::fs::Path self = asp2::fs::executablePath();
-    asp2::fs::Path dir = self.empty() ? asp2::fs::Path(".") : self.parent();
-    std::optional<asp2::fs::Path> exe = Detail::FindGameExeBeside(dir, self);
+    const asp::fs::Path self = util::executablePath();
+    asp::fs::Path dir = self.empty() ? asp::fs::Path(".") : util::parentOf(self);
+    std::optional<asp::fs::Path> exe = Detail::FindGameExeBeside(dir, self);
     std::optional<Paths> paths = exe ? PathsFromExe(*exe) : std::nullopt;
     // Without the game's pck we can still serve mod authors: --compile works
     // anywhere, rooted at the folder that holds mods/ or gd/.
-    const asp2::fs::Path gameDir = paths ? paths->original.parent() : Detail::GuessGameDir(dir);
-    const asp2::fs::Path dataDir = gameDir / "MachinePartyModLoader";
+    const asp::fs::Path gameDir = paths ? util::parentOf(paths->original) : Detail::GuessGameDir(dir);
+    const asp::fs::Path dataDir = gameDir / "MachinePartyModLoader";
     g_log.setFile(gameDir / "mpml.log");
 
     if (compile) {
-        std::vector<asp2::fs::Path> roots;
+        std::vector<asp::fs::Path> roots;
         if (compileTarget) {
             roots.push_back(*compileTarget);
         } else {
@@ -224,7 +232,7 @@ int main(int argc, char** argv) {
         const int errors = gd::CheckRoots(roots, dataDir / "cache", Log, !compileTarget, true);
         if (errors == 0) Log("compile check passed");
         else Log(std::to_string(errors) + " script error(s) - details above and in " +
-                 (dataDir / "cache" / "compile_report.txt").str());
+                 (dataDir / "cache" / "compile_report.txt").string());
         return errors == 0 ? 0 : 1;
     }
 
@@ -246,9 +254,9 @@ int main(int argc, char** argv) {
     gd::CheckLoaderScripts(gameDir, Log, true);
 
     if (play) {
-        return Detail::Launch({*exe, "--main-pack", paths->modded});
+        return Detail::Launch({*exe, asp::fs::Path("--main-pack"), paths->modded});
     }
-    std::printf("\nSet the game's Steam launch option to:\n\n  \"%s\" %%command%%\n\n", self.str().c_str());
+    std::printf("\nSet the game's Steam launch option to:\n\n  \"%s\" %%command%%\n\n", self.string().c_str());
     return 0;
 }
 
