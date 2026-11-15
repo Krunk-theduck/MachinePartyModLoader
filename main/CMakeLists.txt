@@ -1,0 +1,9 @@
+add_executable(MachinePartyModLoader main.cpp)
+target_link_libraries(MachinePartyModLoader PRIVATE mpml_patch mpml_logger)
+if(WIN32)
+  target_sources(MachinePartyModLoader PRIVATE "${CMAKE_BINARY_DIR}/version_loader.rc")
+  target_link_libraries(MachinePartyModLoader PRIVATE shell32)   # CommandLineToArgvW
+  if(MINGW)
+    target_link_options(MachinePartyModLoader PRIVATE -static)
+  endif()
+endif()

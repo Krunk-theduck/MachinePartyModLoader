@@ -9,18 +9,15 @@ var _input: LineEdit
 var _open := false
 var _prev_mouse_mode := Input.MOUSE_MODE_VISIBLE
 
-
 func _mod_init(loader) -> void:
 	_loader = loader
 	loader.note("console mod init")
-
 
 
 func _mod_ready(loader) -> void:
 	loader.note("console mod ready")
 	_build_ui()
 	_print("debug console ready — press ~ to toggle, 'help' for commands")
-
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
@@ -67,7 +64,6 @@ func _build_ui() -> void:
 	_input.text_submitted.connect(_on_submit)
 	vbox.add_child(_input)
 
-
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == TOGGLE_KEY:
 		_toggle()
@@ -76,7 +72,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _open and event.is_action_pressed("ui_cancel"):
 		_toggle()
 		get_viewport().set_input_as_handled()
-
 
 func _toggle() -> void:
 	_open = not _open
@@ -89,7 +84,6 @@ func _toggle() -> void:
 		Input.mouse_mode = _prev_mouse_mode
 		_input.release_focus()
 
-
 func _on_submit(text: String) -> void:
 	text = text.strip_edges()
 	_input.text = ""
@@ -97,7 +91,6 @@ func _on_submit(text: String) -> void:
 		_print("> " + text)
 		_run(text)
 	_input.grab_focus()
-
 
 func _run(line: String) -> void:
 	var parts := line.split(" ", false)
@@ -126,7 +119,6 @@ func _run(line: String) -> void:
 			_log.text = ""
 		_:
 			_print("unknown command: " + cmd)
-
 
 func _print(line: String) -> void:
 	_log.append_text(line + "\n")

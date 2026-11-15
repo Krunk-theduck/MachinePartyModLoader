@@ -1,460 +1,101 @@
 # Machine Party Mod Loader
-
-> # ⚠️ AFTER EVERY GAME UPDATE: RE-RUN THE LOADER ⚠️
->
-> When Steam updates Machine Party it **overwrites the game file the mods are patched into, so your mods stop loading.** This is normal and expected — nothing is broken.
->
-> **The fix takes one second:** after any game update, before you play, just **run `MachinePartyModLoader.exe` again** (or double-click **`Reinstall Mods (run after game updates).bat`** in your game folder). It re-patches instantly and your mods are back. You do **not** need to re-download or reinstall the mods themselves.
->
-> If you launch and the mods are gone, that's all it is — an update reset the patch. Re-run the loader and you're good.
-
-## Before we start
-
-This modloader was made by a single dev, using claude and the tiny amount of python I know,
-please be patient.
-
-VirusTotal flags this exe for 1 trojan: Elastic Malicious (moderate Confidence)
-In the next section where it is tested in virtual boxes it proceeds to score 0 malicious attempts.
-I promise the file is safe, its just unsigned due to me not having cash to spend on a free mod.
-  
-![Detection Status](MPML/virusTotalDetections.png)
-![Behaviour Status](MPML/virusTotalBehaviour.png)
-  
 This page has two parts:
-
-- **Getting Started** (below) - for anyone who just wants to install mods.
-
-- **For Mod Authors & Developers** (way at the bottom) - for nerds who want
-to either confirm the safety, or the use of AI in this project (hang off, 
-almost the entire loader was made with AI)
+  - Getting Started (below) - for anyone who just wants to install mods.
+  - For Mod Authors & Developers (way at the bottom) - for nerds who want to either confirm the safety, or the use of AI in this project (hang off, almost the entire loader was made with AI)
 
 If you're not planning to write a mod or complain, you can stop reading as soon
 as you hit the second part.
 
-\---
+## How to Use
+* **Proxy DLL (Windows):** copy `winmm.dll` next to `Machine Party.exe`. Launch as normal.
+* **Launcher (any OS):** set the Steam launch option to `"<path>/MachinePartyModLoader" %command%`.
+  On Linux/Mac you can also put the launcher binary INSIDE the `MachinePartyModLoader`
+  folder next to the game (the file and the folder can't share a name there) and use
+  `"<path>/MachinePartyModLoader/MachinePartyModLoader" %command%`.
+* Mods go in `mods/` next to the game exe, same as before. Loose `.gd` scripts go in
+  `gd/` next to the game exe - they load automatically, no mod.json needed.
+* After a game update, run the loader once (or just start the game through Steam) -
+  it notices the changed pck and rebuilds the modded copy on its own.
+* Uninstall: delete `winmm.dll` / the launch option, and run `MachinePartyModLoader --uninstall`
+  (removes the modded pck + record; your `mods/` and `gd/` folders are left alone).
+* The loader keeps its own stuff in `MachinePartyModLoader/` next to the game:
+  `modloader.log` (in-game loader log), `mpml.log` / `mpml_proxy.log` (launcher/proxy
+  logs sit next to the exe), and `cache/` (compile reports + verdict cache - safe to delete).
 
-## Getting Started
+If you previously used the old Python installer, restore a vanilla pck first
+(`--uninstall` in the old tool, or Steam "Verify integrity of game files").
 
-### Step 1 — Get the file
+## Script checking
+Every launch compile-checks the `.gd` scripts in `mods/` and `gd/` and logs syntax
+errors (with file + line) before the game starts - launches are never blocked.
 
-Download `MachinePartyModLoader.exe` from modloader releases. If what you have
-is a `.zip` file instead, right-click it and choose **Extract All** first -
-you want the `.exe` file not a zip.
+    MachinePartyModLoader --compile            check gd/ + mods/, exit 1 on errors
+    MachinePartyModLoader --compile <path>     check one file or folder
 
-### Step 2 — Find your Machine Party folder
+The full report lands in `MachinePartyModLoader/cache/compile_report.txt`; verdicts
+are cached in `MachinePartyModLoader/cache/compile/` so only changed scripts are
+re-parsed. It is a syntax check only - type errors stay the engine's job.
 
-1. Open Steam.
-2. In your **Library**, find Machine Party and right-click it.
-3. Click **Manage**, then click **Browse local files**.
-4. A File Explorer window will pop up.
-5. Inside it, look for another folder - `Machine Party_Windows`. Open that folder too.
-6. You should now see files named `Machine Party.exe` and
-   `Machine Party.pck`. **This is the folder you need** - keep this window
-   open, you'll use it for every step below.
+## Test (Linux/Mac)
+    python3 tests/compare.py build/main/MachinePartyModLoader /path/to/modloader_patch.py
 
-### Step 3 — Put the loader in that folder
-
-Drag `MachinePartyModLoader.exe` into the File Explorer window open to Machine Party,
-so it sits next to `Machine Party.exe` and `Machine Party.pck`.
-
-### Step 4 — Run it
-
-Double-click `MachinePartyModLoader.exe`.
-
-Windows will very likely show a blue box titled **"Windows protected your
-PC"**. This is fine - it happens for any program that wasn't
-bought from the Microsoft Store, not because anything is actually wrong.
-
-To get past it:
-
-1. Click the small text that says **More info**.
-2. A button labeled **Run anyway** will appear. Click it.
-
-### Step 5 — Let it finish
-
-A black window will open with some text scrolling by — that's normal, it's
-setting things up. When it's done, it will say:
-
-```
-Done. Press Enter to close this window . . .
-```
-
-Press Enter, or just close the window.
-
-### Step 6 — Install a mod (optional)
-
-Look in the game's folder again (the one from Step 2). There's now a
-folder in there called `mods`. To install a mod someone gives you, put its
-folder inside `mods`.
-
-There's already one folder in there called `console` which came bundled
-with the loader itself, as a working example. You don't need to do anything
-with it; it's just there so you can peek inside and see what a mod looks
-like, or view what mods you have installed from inside the game.
-
-### Step 7 — Play
-
-Start Machine Party from Steam/File explorer (if you sail the seas) exactly like you always have.
-
-### How do you know it worked?
-
-Once you're in the game, press the `` ` `` key — that's the small squiggly
-key, usually just above **Tab** and to the left of the **1** key. A debug
-console should pop up on screen. If it does, the loader is working, escape 
-or ` again should close the console.
-
-### Uninstalling
-
-Go back to the game's folder (Step 2). Double-click **`Uninstall Mods.bat`**
-— it appeared there the first time you ran the loader. It will list what
-it's about to remove and ask you to type `y` and press Enter to confirm.
-
-This removed the hook and mods, but NOT the loader or uninstaller files. 
-Manually delete those if you dont want them, they are not active anymore.
-
-### Optional: make it update with the game
-
-If you don't want to double-click the loader every update before you play:
-
-1. In Steam, right-click Machine Party → **Properties**.
-2. On the **General** tab, find the box labeled **Launch Options**.
-3. Paste this in (fix the path if you put the loader somewhere other than
-   the folder from Step 2):
-
-```
-"C:\path\to\Machine Party_Windows\MachinePartyModLoader.exe" %command%
-```
-
-Now every time you hit Play in Steam, it checks/updates the mods and game for you
-first, then starts the game automatically.
-
-\---
-
-\---
 
 # For Mod Authors & Developers
 
-Everything below this line assumes you're comfortable with a terminal,
-Python, and/or GDScript. If you just wanted to play with mods installed,
-you're done — everything you need was above.
-
-Also this entire section of the readme was fully ai generated, enjoy nerds.
-
-## How it works (the whole idea in four lines)
-
-1. The installer opens the game's `.pck` and drops in one tiny script.
-2. It also flips one setting so that script runs **first**, before any game code.
-3. That script looks in the `mods` folder next to the exe and loads every
-   `.gd` file it finds.
-4. A game update wipes the `.pck`? Run the installer again. It notices and
-   re-does steps 1 and 2 by itself. The `mods` folder itself is never
-   touched — it lives next to the exe/pck, not inside the pck, so a Steam
-   update or "verify integrity" has no reason to touch it.
-
-\---
-
-## Running it from source
-
-**Step 1.** Put `modloader_patch.py` (and `bootstrap.gd`, if you're editing
-it) in the same folder as `MachineParty.exe` and `MachineParty.pck`.
-
-**Step 2.** Open a terminal there and run:
-
-```
-python modloader_patch.py
-```
-
-It prints where the mods folder is — right next to `modloader_patch.py`
-itself (`<this folder>\mods`).
-
-**Step 3.** Start the game. If a mod doesn't seem to be loading, check
-`godot.log`, which is still under Godot's per-game user data folder (not
-next to the exe):
-
-```
-C:\Users\you\AppData\Roaming\Godot\app_userdata\Machine Party\logs\godot.log
-```
-
-You should see `[modloader] loaded console v1.0.0` in there.
-
-### Building the exe
-
-```
-pip install pyinstaller
-pyinstaller --onefile --name MachinePartyModLoader modloader_patch.py
-```
-
-You get one `.exe`. That's what you hand out. It has the loader script baked
-inside it, so it's the only file anyone needs.
-
-The built exe never reads a `bootstrap.gd` file sitting next to it — it
-always falls back to the `BOOTSTRAP` string constant baked into
-`modloader_patch.py`. If you've been hand-editing `bootstrap.gd` for
-development, diff it against that constant before you build, or the exe you
-hand out will silently ship stale loader logic.
-
-The first time the built exe runs, it also drops `Uninstall Mods.bat` next
-to itself (skipped when running the raw `.py` — that path is for players,
-who'll only ever have the exe).
-
-### Making it run automatically on Steam
-
-Right-click the game → Properties → Launch Options → paste:
-
-```
-"C:\path\to\MachinePartyModLoader.exe" %command%
-```
-
-Now Steam runs the installer first and it hands off to the game. Steam keeps
-launch options in its own config, so **updates don't erase this**.
-
-\---
-
-## Write a mod
-
-**Step 1.** Go to the mods folder.
-
-**Step 2.** Make a new folder. Call it whatever, e.g. `bigger_jump`.
-
-**Step 3.** Inside it, make `mod.json`:
-
-```json
-{
-  "id": "bigger_jump",
-  "name": "Bigger Jump",
-  "version": "1.0.0",
-  "entry": "main.gd",
-  "priority": 0,
-  "requires": []
-}
-```
-
-**Step 4.** Next to it, make `main.gd`:
-
-```gdscript
-extends Node
-
-func _mod_init(loader) -> void:
-	loader.note("bigger jump loading")
-
-func _mod_ready(loader) -> void:
-	loader.note("bigger jump ready")
-```
-
-**Step 5.** Start the game. Done. No packing, no rebuild.
-
-\---
-
-## Changing what the game already does
-
-To replace a vanilla script, make a second file — say `override.gd` — whose very
-first line points at the file you're replacing:
-
-```gdscript
-extends "res://scripts/player.gd"
-
-func _ready() -> void:
-	super._ready()
-	print("player script has been modded")
-```
-
-Then in `main.gd`:
-
-```gdscript
-func _mod_init(loader) -> void:
-	loader.override_script_rel("bigger_jump",
-		"res://scripts/player.gd", "override.gd")
-```
-
-Because your script **extends** the original instead of deleting it, two mods
-touching the same file stack on top of each other instead of one silently
-winning. This is the single most important rule of the whole system.
-
-It only affects things loaded **after** your mod runs, which is why
-`_mod_init` exists and runs before the game builds anything.
-
-\---
-
-## Loader API (what `loader` gives you)
-
-|Call|Does|
-|-|-|
-|`loader.note(text)`|print + write to `user://modloader.log`|
-|`loader.compile(abs_path)`|turn a loose `.gd` file into a usable script|
-|`loader.override_script(res_path, abs_path)`|swap a vanilla script|
-|`loader.override_script_rel(id, res_path, rel)`|same, relative to your mod folder|
-|`loader.dir_of(id)`|that mod's folder|
-|`loader.has_mod(id)`|is another mod present|
-|`loader.mod_list()`|everything loaded|
-|`loader.open_mods_folder()`|pop the folder open in the file manager|
-
-**New in loader v3** (API level 2 — all additive, so older mods keep working unchanged). Feature-detect with `loader.has_api("mount_assets")` or `loader.api_version() >= 2` before calling:
-
-|Call|Does|
-|-|-|
-|`loader.mount_assets(id, rel)`|mount a `.zip`/`.pck` resource pack shipped inside your mod, so its `res://` assets load|
-|`loader.register_autoload(name, id, rel)`|register one of your scripts as an autoload singleton|
-|`loader.register_global_class(cls, id, rel)`|register a `class_name` global so other scripts can reference it|
-|`loader.register_script(id, rel, res_id)`|expose a script at a chosen `res://` path|
-|`loader.on_scene_script(cb)` / `on_node_added(cb)` / `on_main_menu(cb)` / `on_lobby(cb)`|shared lifecycle hooks — one callback list every mod shares, instead of each mod racing its own `SceneTree` watcher|
-|`loader.is_local_couch()` / `loader.game_mode()`|is the game in v2's local shared-screen couch mode; `"local"` / `"online"` / `""`|
-|`loader.registry(name)`|a shared, named `Dictionary` for cross-mod coordination|
-|`loader.api_version()` / `loader.loader_version()` / `loader.has_api(n)`|feature/version numbers and capability detection|
-
-Mod entry points: `_mod_init(loader)` (before the game exists — do overrides
-here) and `_mod_ready(loader)` (scene tree alive — safe to touch nodes).
-
-Load order: `priority` low to high, ties broken alphabetically by `id`. A mod
-listing an absent `requires` entry is skipped with a log line instead of
-crashing.
-
-**Gotcha:** `loader` (and anything else passed into your mod with no
-declared type) is `Variant` to the static analyzer. `var x := loader.something()`
-will fail to compile with "Cannot infer the type of X" — Godot's `:=` needs
-a known type on the right side. Fix: give it an explicit type instead —
-`var x: String = loader.dir_of(...)` — or drop the type and use plain
-`var x = ...`. The same trap applies to typing a field as a specific class
-(e.g. `var thing: Node`) and then accessing members that only exist on the
-script attached to it, not on `Node` itself — leave the field untyped if you
-need to reach another mod's custom signals/methods through it.
-
-\---
-
-## Installer flags
-
-|Flag|Does|
-|-|-|
-|*(none)*|patch if needed, do nothing if already current|
-|`--play`|patch, then launch the game|
-|`--force`|re-patch even if up to date|
-|`--restore`|put the untouched `.pck` back (keeps your mods folder and backup)|
-|`--uninstall`|`--restore`, **plus** delete the mods folder, `.vanilla` backup, undo record, and `modloader.log` — asks for confirmation|
-|`--yes`|skip the confirmation prompt (use with `--uninstall`)|
-|`--pck` / `--exe`|explicit paths if auto-detect misses|
-|`--bootstrap FILE`|inject your own edited `bootstrap.gd` (for dev)|
-
-A clean copy is saved to `MachineParty.pck.vanilla` on the first patch (for
-pack format 2 only — format 3, which this game uses, is append-only and
-never needs a full-file backup), and the new pck is fully re-parsed before
-anything is overwritten.
-
-### Uninstalling, and what happens if the normal path can't restore it
-
-`Uninstall Mods.bat` just runs `MachinePartyModLoader.exe --uninstall` and
-pauses so the output stays visible. From a terminal, that's:
-
-```
-python modloader_patch.py --uninstall
-```
-
-Normal case: it restores the pck from the undo record (format 3, this
-game's format — just resets a header pointer and truncates the appended
-bytes) or the `.vanilla` backup (format 2), then deletes the mods folder,
-the backup, the undo record, and `modloader.log`. It lists everything it's
-about to do and asks for confirmation first (`--yes` skips that).
-
-Fallback case: if there's no undo record *and* no `.vanilla` backup (e.g.
-someone deleted them by hand) but the pck still has our stamp in it, there's
-no local data left to restore from — so it instead tries to identify the
-Steam App ID by walking up from the pck to `steamapps/appmanifest_*.acf` and
-matching the install folder name, then fires `steam://validate/<appid>` to
-make Steam verify and re-download the original file itself. If the App ID
-can't be identified (e.g. it's not actually a Steam install), it prints
-manual instructions instead: Properties → Installed Files → Verify integrity
-of game files. Either way, the mods folder and logs still get cleaned up
-regardless of whether the pck itself could be fixed automatically — check
-the final summary line to see which case happened.
-
-If you added the Steam launch option, remove it from the game's Properties
-too; this tool can't do that part for you.
-
-\---
-
-## Testing checklist
-
-Do this against a **scratch copy** of the game folder (copy `MachineParty.exe`
-+ `MachineParty.pck` + the `.dll`s somewhere else), not your only install —
-the tool is designed to be reversible, but there's no reason to bet on that
-while you're still finding bugs in it.
-
-### 1. The script itself
-
-1. `python modloader_patch.py` in the scratch folder. Check the printed pack
-format/version look right, and that it prints a `mods folder:` path ending in
-`\mods` with the `console` example written inside it.
-2. Run it again with no flags — should print `already patched and up to date`
-and do nothing.
-3. `python modloader_patch.py --force` — re-patches even though nothing
-changed; mods folder should be untouched.
-4. Launch the exe (or `--play`). In-game, press `` ` `` — the debug console
-should open; try `help`, `mods`, `note hi`, `has console`, `clear`. Check
-`godot.log` under Godot's `app_userdata\Machine Party\logs\` (note: that's
-still in `AppData`, not next to the exe — only the mods folder moved) shows
-`loaded console v1.0.0`.
-5. Drop `Krunk-ChatMod` into the mods folder, relaunch. Press `T`, send a
-message, toggle FILTER, mute/unmute a row, CLEAR. If you can get a second
-Steam client in the lobby, spam messages to confirm the rate limit and
-auto-mute actually kick in, and confirm the sender name comes from Steam (not
-something a modified client could fake).
-6. `python modloader_patch.py --restore` — game should launch fully vanilla
-(no console, no chat). Mods folder and `.vanilla` backup should still exist.
-7. `--force` to re-patch, then `python modloader_patch.py --uninstall`. Check
-the printed removal list looks right, answer `y`, then confirm: pck is back to
-its original size, `.vanilla` backup gone, mods folder gone,
-`modloader.log` gone. Run `--uninstall` once more — it should say there's
-nothing left to do.
-8. Re-patch, then `--uninstall --yes` — confirms the non-interactive path
-skips the prompt.
-9. Delete the undo record (the `.modloader.json` file next to the pck) after
-a fresh patch, then `--uninstall` again — confirms the Steam-verify fallback
-path triggers instead of silently leaving the pck patched.
-
-### 2. Building it
-
-```
-pip install pyinstaller
-pyinstaller --onefile --name MachinePartyModLoader modloader_patch.py
-```
-
-### 3. The built exe
-
-Repeat the "script itself" checklist above, but running
-`dist\MachinePartyModLoader.exe` instead of `python modloader_patch.py`, in a
-**fresh** scratch copy of the game folder (so you're not reusing a folder the
-raw script already patched). Also check:
-
-- It finds the `.pck`/`.exe` beside it with no `--pck`/`--exe` flags.
-- Double-clicking it (not running from a terminal) leaves the window open
-  with "Press Enter to close" instead of vanishing instantly — that's the
-  whole reason `die()` and the end of `main()` pause when frozen.
-- `Uninstall Mods.bat` appears next to it after the first run, and
-  double-clicking that actually uninstalls.
-- The Steam launch-option form works: `"C:\path\to\MachinePartyModLoader.exe" %command%`
-  — set that on a real (or test) Steam entry, launch from Steam, confirm the
-  game still starts and the console/chat mod still load, and confirm it does
-  **not** pause waiting for Enter in this case (that would hang the game
-  launch forever).
-
-\---
-
-## If something goes wrong
-
-**"does not start with GDPC"** — the pck is embedded inside the exe. This tool
-can't patch that; you'd need a different approach.
-
-**Game won't start after patching** — run `--restore`, confirm the game launches,
-then check `user://modloader.log`.
-
-**Mod doesn't load** — check the log. Usual causes: `mod.json` has a trailing
-comma, `entry` doesn't match the actual filename, or `main.gd` doesn't say
-`extends Node` on line 1.
-
-**"compile failed" for a script that looks fine** — check `user://logs/godot.log`
-(not `modloader.log`) for the actual parser error; `[modloader] compile failed: ...`
-only tells you *that* it failed, not *why*. See the `:=` gotcha under
-[Loader API](#loader-api-what-loader-gives-you) above — that's the most common cause.
-
-**One thing to test before shipping this to anyone:** the injected bootstrap is
-plain GDScript source, while the rest of the pck is binary-tokenized. Godot's
-parser sniffs the header and handles both, so it should be fine — but confirm it
-on your build before you hand the tool out.
+## Mods
+A mod is a folder in `mods/` with a `mod.json` and an entry script (`main.gd`):
+
+    {
+      "id": "console",
+      "name": "Example console mod",
+      "version": "1.0.0",
+      "entry": "main.gd",
+      "priority": 0,
+      "requires": []
+    }
+
+Mods can call the loader (injected as the `ModLoader` autoload, passed to
+`_mod_init` / `_mod_ready`) for API level 2: `compile`, `override_script`,
+`override_script_rel`, `dir_of`, `has_mod`, `mod_list`, `open_mods_folder`,
+`mount_assets`, `register_autoload`, `register_global_class`, `register_script`,
+`on_scene_script`, `on_node_added`, `on_main_menu`, `on_lobby`, `is_local_couch`,
+`game_mode`, `registry`, `api_version`, `loader_version`, `has_api`.
+
+Loose scripts in `gd/` behave like one-file mods: `.gd` files that extend `Node`
+are started automatically (with `_mod_init` support); anything else is compiled
+and registered. The mod id of a loose script is its file name.
+
+## How the pieces fit
+    asp2/     THE file API (asp2::fs). Every disk operation in the loader - the
+              launcher, the proxy DLL, the patcher, the logger - goes through
+              this one place, never through raw std::filesystem/stdio.
+    patch/    mpml_patch: the pck reader/patcher (pck.cpp), the modded-pck logic
+              (patch.cpp), the .gd compile check (gdcheck.cpp) and the embedded
+              bootstrap.gd + example mod. Used by BOTH the launcher and the proxy.
+    main/     the launcher binary (Steam launch option / standalone).
+    proxy/    winmm.dll: loads before Godot, patches the pck if needed, then
+              hooks CreateFileW so "<game>.pck" opens "<game>.modded.pck".
+    Global/   mpml_logger: the small logger shared by launcher + proxy.
+
+## One version to rule them all
+The loader version lives in exactly ONE place: `mpml::kVersion` in `patch/version.h`.
+Everything else derives from it automatically:
+* `patch/bootstrap.gd` contains the placeholder `@MPML_VERSION@`; when the modded
+  pck is built, the patcher injects `kVersion`. (A version bump therefore also
+  changes the bootstrap bytes, which rebuilds the modded pck - automatically.)
+* CMake regenerates the Windows version resources (`version_loader.rc` /
+  `version_proxy.rc`) from `kVersion` on every configure - the exe/dll properties
+  always match the loader version.
+Never edit `LOADER_VERSION` in bootstrap.gd by hand; bump `kVersion` instead.
+
+## Building (Windows)
+    cmake -B build
+    cmake --build build --config Release
+Outputs: `build/main/MachinePartyModLoader.exe` and `build/proxy/winmm.dll`.
+NASM is bundled in `Scripts/nasm/` (the winmm jump table); MinHook is fetched
+by CMake on first configure.
+
+## Building (Linux/Mac)
+    cmake -B build -DCMAKE_BUILD_TYPE=Release
+    cmake --build build -j
+(the proxy DLL is Windows-only; the launcher + patcher build everywhere)
