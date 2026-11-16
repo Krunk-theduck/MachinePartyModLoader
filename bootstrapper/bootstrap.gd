@@ -612,7 +612,6 @@ func has_api(n) -> bool:
                 return API_VERSION >= int(n)
 
         var api_name := String(n)
-        # Public methods are the API registry: no duplicate name list to maintain.
         return has_method(api_name)
 
 

@@ -1,25 +1,44 @@
 cmake_minimum_required(VERSION 3.24)
 project(MPML C CXX)
-
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" MPML_VERSION_LINES)
 
 foreach(LINE IN LISTS MPML_VERSION_LINES)
     if(LINE MATCHES "^Version *= *\"([^\"]+)\"$")
-        set(kMPLLoader "${CMAKE_MATCH_1}")
+        set(kMPMLVersion "${CMAKE_MATCH_1}")
     elseif(LINE MATCHES "^API *= *\"([^\"]+)\"$")
         set(kMPMLApiVersion "${CMAKE_MATCH_1}")
     endif()
 endforeach()
 
-if(NOT DEFINED kMPLLoader OR NOT DEFINED kMPMLApiVersion)
-    message(FATAL_ERROR "Missing MPML_VERSION or MPML_APIVERISON in version.txt")
+if(NOT DEFINED kMPMLVersion OR NOT DEFINED kMPMLApiVersion)
+    message(FATAL_ERROR "Missing Version or API in version.txt")
 endif()
 
-set(MPML_VER_DOT "${kMPLLoader}.0.0.0")
-string(REPLACE "." "," MPML_VER_COMMA "${MPML_VER_DOT}")
+# Validate version components
+if(NOT kMPMLVersion MATCHES "^[0-9]+(\\.[0-9]+)*$")
+    message(FATAL_ERROR "Invalid version '${kMPMLVersion}'. Expected numeric version components.")
+endif()
 
+string(REPLACE "." ";" MPML_VERSION_PARTS "${kMPMLVersion}")
+list(LENGTH MPML_VERSION_PARTS MPML_VERSION_PARTS_COUNT)
+
+if(MPML_VERSION_PARTS_COUNT GREATER 4)
+    message(FATAL_ERROR "Invalid version '${kMPMLVersion}'. Maximum of 4 components allowed.")
+endif()
+
+# Pad version to exactly four components
+while(MPML_VERSION_PARTS_COUNT LESS 4)
+    list(APPEND MPML_VERSION_PARTS 0)
+    math(EXPR MPML_VERSION_PARTS_COUNT "${MPML_VERSION_PARTS_COUNT} + 1")
+endwhile()
+
+# Generate Windows VERSIONINFO formats
+string(JOIN "." MPML_VER_DOT ${MPML_VERSION_PARTS})
+string(JOIN "," MPML_VER_COMMA ${MPML_VERSION_PARTS})
+
+# Export version definitions
 add_compile_definitions(
-    MPML_VERSION="${kMPLLoader}"
+    MPML_VERSION="${kMPMLVersion}"
     MPML_API_VERSION="${kMPMLApiVersion}"
     MPML_VERSION_DOT="${MPML_VER_DOT}"
     MPML_VERSION_COMMA=${MPML_VER_COMMA}

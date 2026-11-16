@@ -54,7 +54,5 @@ jobs:
             build/**/*.exe
             build/**/*.dll
             build/**/*.dylib
-            build/**/*.a
-            build/main/**
           if-no-files-found: warn
           retention-days: 14
