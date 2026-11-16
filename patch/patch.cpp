@@ -7,12 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "embedded.h"
+#include "bootstrapper/embedded.h"
 #include "pck.h"
-#include "settings/settings.hpp"
+#include "directories/paths.hpp"
 #include "util/util.hpp"
-#include "version.h"
-#include "Dirs/paths.hpp"
 
 namespace mpml {
 namespace Detail {
@@ -34,21 +32,39 @@ std::string hex64(uint64_t v) {
     return b;
 }
 
-// bootstrap.gd (embedded at compile time) carries the @MPML_VERSION@ placeholder;
-// this injects mpml::kVersion so the version lives in exactly one place. A
-// version bump therefore changes the bootstrap bytes -> the modded pck rebuilds.
 std::string finalizeBootstrap() {
-    static const std::string kPlaceholder = "@MPML_VERSION@";
-    std::string s(reinterpret_cast<const char*>(kBootstrapGd), kBootstrapGdSize);
-    size_t at = s.find(kPlaceholder);
-    if (at == std::string::npos)
-        throw Error("bootstrap.gd lost its version placeholder - the loader version can no\n"
-                    "  longer be synced; restore the line  const LOADER_VERSION := \"@MPML_VERSION@\"");
-    for (; at != std::string::npos; at = s.find(kPlaceholder))
-        s.replace(at, kPlaceholder.size(), kVersion);
-    return s;
-}
+    std::string s(
+        reinterpret_cast<const char*>(kBootstrapGd),
+        kBootstrapGdSize
+    );
 
+    static const std::unordered_map<std::string, std::string> replacements = {
+        { "@MPML_VERSION@", MPML_VERSION },
+        { "@MPML_API_VERSION@", MPML_API_VERSION },
+    };
+
+    for (const auto& [placeholder, value] : replacements) {
+        size_t at = 0;
+
+        while ((at = s.find(placeholder, at)) != std::string::npos) {
+            s.replace(at, placeholder.size(), value);
+            at += value.size();
+        }
+    }
+    size_t at = s.find('@');
+    if (at != std::string::npos) {
+        size_t end = s.find('@', at + 1);
+
+        if (end != std::string::npos) {
+            throw Error(
+                "bootstrap.gd contains an unresolved placeholder: " +
+                s.substr(at, end - at + 1)
+            );
+        }
+    }
+
+    return s;
+};
 // --- patch record (one small text file beside the modded pck) ---------------
 
 struct Record {
@@ -165,28 +181,6 @@ std::optional<Paths> PathsFromExe(const asp::fs::Path& gameExe) {
     return out;
 }
 
-void EnsureLoaderFolders(const asp::fs::Path& gameDir, const LogFn& log) {
-    asp::fs::Path console = dirs::mods(gameDir) / "console";
-    if (!asp::fs::exists(console)) {
-        if (asp::fs::createDirAll(console).isOk()) {
-            (void)asp::fs::write(console / "mod.json",
-                                 std::span{kExampleModJson, kExampleModJsonSize});
-            (void)asp::fs::write(console / "main.gd",
-                                 std::span{kExampleModGd, kExampleModGdSize});
-            if (log) log("wrote example mod -> " + console.string());
-        }
-    }
-    asp::fs::Path gd = dirs::plugins(gameDir);
-    if (!asp::fs::exists(gd) || util::listFilesRecursive(gd, ".gd").empty()) {
-        if (asp::fs::createDirAll(gd).isOk()) {
-            (void)asp::fs::write(gd / "example.gd",
-                                 std::span{kExampleLooseGd, kExampleLooseGdSize});
-            if (log) log("wrote example script -> " + (gd / "example.gd").string());
-        }
-    }
-    settings::ensureDefault(settings::fileFor(gameDir, "loader.cfg"));
-}
-
 Result EnsureModdedPck(const Paths& paths, const LogFn& log) {
     Result r;
     asp::fs::Path tmp(paths.modded.string() + ".tmp");
@@ -196,7 +190,7 @@ Result EnsureModdedPck(const Paths& paths, const LogFn& log) {
 
         const std::string bootstrap = Detail::finalizeBootstrap();
         const std::string stamp =
-            std::string(kVersion) + ":" +
+            std::string(MPML_VERSION) + ":" + std::string(MPML_API_VERSION) +
             Detail::hex64(util::hashBytes(util::kHashSeed,
                                           reinterpret_cast<const uint8_t*>(bootstrap.data()),
                                           bootstrap.size()));

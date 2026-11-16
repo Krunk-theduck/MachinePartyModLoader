@@ -1,3 +1,9 @@
+
+# Embedded assets
+add_subdirectory(
+    "${CMAKE_SOURCE_DIR}/bootstrapper"
+    "${CMAKE_BINARY_DIR}/bootstrapper"
+)
 # Shared code between the launcher and the proxy DLL.
 
 # mpml_util - the few file helpers asp2 does not ship (exe path, hashing,
@@ -18,8 +24,10 @@ target_link_libraries(mpml_logger PRIVATE mpml_warnings)
 target_link_libraries(mpml_logger PUBLIC mpml_util)
 
 # mpml_dirs - set of files
-add_library(mpml_dirs STATIC Dirs/paths.cpp)
+add_library(mpml_dirs STATIC directories/paths.cpp)
 target_link_libraries(mpml_dirs PRIVATE mpml_warnings)
 target_include_directories(mpml_dirs PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(mpml_dirs PUBLIC asp)
+target_link_libraries(mpml_dirs PRIVATE mpml_settings)
 target_link_libraries(mpml_util PRIVATE mpml_dirs)
+target_link_libraries(mpml_dirs PRIVATE mpml_assets)

@@ -1,6 +1,8 @@
 #pragma once
 #include <string>
 #include <asp/fs.hpp>
+#include "settings/settings.hpp"
+#include "util/util.hpp"
 
 namespace mpml {
     namespace dirs
@@ -23,6 +25,7 @@ namespace mpml {
         inline asp::fs::Path mods(const asp::fs::Path& gameDir) {
             return gameDir / "mods";
         };
+        void AddFolders(const asp::fs::Path& gameDir, const LogFn& log);
     } // namespace dirs
     
 }

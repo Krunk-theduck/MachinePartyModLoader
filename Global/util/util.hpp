@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <functional>
+using LogFn = std::function<void(const std::string&)>;
 
 #include <asp/fs.hpp>
 

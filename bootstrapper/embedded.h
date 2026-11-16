@@ -1,6 +1,6 @@
-// Generated blobs (see CMakeLists.txt): the GDScript bootstrap and the example mod/script.
 #pragma once
 #include <cstddef>
+
 extern const unsigned char kBootstrapGd[];
 extern const size_t kBootstrapGdSize;
 extern const unsigned char kExampleModGd[];

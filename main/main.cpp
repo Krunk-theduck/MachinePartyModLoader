@@ -26,7 +26,7 @@
 #include "patch.h"
 #include "gdcheck.h"
 #include "util/util.hpp"
-#include "Dirs/paths.hpp"
+#include "directories/paths.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -192,7 +192,7 @@ int main(int argc, char** argv) {
             g_log.setFile(mpml::dirs::logs(gameDir) / "mpml.log");
             Result r = EnsureModdedPck(*paths, Log);
             if (r.ok) {
-                EnsureLoaderFolders(gameDir, Log);
+                dirs::AddFolders(gameDir, Log);
                 gd::CheckLoaderScripts(gameDir, Log, true);
                 if (!Detail::HasMainPack(cmd)) {
                     cmd.emplace_back("--main-pack");
@@ -229,7 +229,7 @@ int main(int argc, char** argv) {
         const int errors = gd::CheckRoots(roots, mpml::dirs::cache(gameDir), Log, !compileTarget, true);
         if (errors == 0) Log("compile check passed");
         else Log(std::to_string(errors) + " script error(s) - details above and in " +
-                 (mpml::dirs::cache(gameDir) /  "compile_report.txt").string());
+                 (mpml::dirs::cache(gameDir) /  "mpml.log").string());
         return errors == 0 ? 0 : 1;
     }
 
@@ -240,14 +240,14 @@ int main(int argc, char** argv) {
 
     if (uninstall) {
         RemoveModded(*paths, Log);
-        Log("done. Also remove the Steam launch option / proxy DLL if you used them. Your mods and gd folders were left alone.");
+        Log("done. Also remove the Steam launch option / proxy DLL if you used them. Your folders were left alone.");
         return 0;
     }
 
     Result r = EnsureModdedPck(*paths, Log);
     if (!r.ok) { std::fprintf(stderr, "\nERROR: %s\n", r.message.c_str()); return 1; }
     if (!r.rebuilt) Log("already up to date - nothing to do");
-    EnsureLoaderFolders(gameDir, Log);
+    dirs::AddFolders(gameDir, Log);
     gd::CheckLoaderScripts(gameDir, Log, true);
 
     if (play) {

@@ -9,7 +9,7 @@
 #include <string>
 #include <type_traits>
 
-#include <Dirs/paths.hpp>
+#include <directories/paths.hpp>
 
 namespace mpml::settings {
 
@@ -124,7 +124,7 @@ std::string makeDefaultConfig() {
 
     std::string result;
     result += "# MachinePartyModLoader configuration\n";
-    result += "# Edit values below, then restart the loader.\n\n";
+    result += "# Edit values below, then restart the game for it to apply.\n\n";
 
 #define APPEND_SETTING(Type, Name, Default) \
     result += #Name " = ";                  \

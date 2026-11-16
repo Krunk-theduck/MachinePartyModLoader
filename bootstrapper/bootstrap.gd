@@ -1,21 +1,20 @@
 extends Node
-
-# The version below is filled in automatically from mpml::kVersion when the
-# modded pck is built - never edit this line, bump kVersion in patch/version.h.
+# these are filled out by the mod loader
 const LOADER_VERSION := "@MPML_VERSION@"
-const API_VERSION := 2
+const API_VERSION := @MPML_API_VERSION@
 
-const API_NAMES := [
-        "note", "compile", "override_script", "override_script_rel", "dir_of",
-        "has_mod", "mod_list", "open_mods_folder",
-        "mount_assets", "register_autoload", "register_global_class", "register_script",
-        "on_scene_script", "on_node_added", "on_main_menu", "on_lobby",
-        "is_local_couch", "game_mode", "registry", "api_version", "loader_version", "has_api",
-]
+# API availability is detected from the methods exposed by this node.
+# Add a public API method and has_api() will recognize it automatically.
 
 var mods_root: String = ""
 var mods: Array = []
 var _by_id: Dictionary = {}
+
+# Loose scripts are plugins, kept separate from manifest/zip mods.
+var gd_root: String = ""
+var plugins: Array = []
+var _plugins_by_id: Dictionary = {}
+
 var _log: PackedStringArray = PackedStringArray()
 
 var _kept_overrides: Array[GDScript] = []
@@ -41,19 +40,28 @@ func _init() -> void:
         _start_mods()
         _start_loose()
 
+
 func _ready() -> void:
         name = "ModLoader"
-        for m in mods:
-                var n: Node = m.get("node")
-                if n == null:
-                        continue
-                n.name = str(m["id"])
-                add_child(n)
-                if n.has_method("_mod_ready"):
-                        n.call("_mod_ready", self)
+        _attach_nodes(mods, "_mod_ready")
+        _attach_nodes(plugins, "_plugin_ready", "_mod_ready")
         _ensure_watcher()
         _install_pending_autoloads()
         _flush_log()
+
+
+func _attach_nodes(items: Array, ready_method: String, fallback_method: String = "") -> void:
+        for item in items:
+                var n: Node = item.get("node")
+                if n == null:
+                        continue
+                n.name = str(item["id"])
+                add_child(n)
+                if n.has_method(ready_method):
+                        n.call(ready_method, self)
+                elif not fallback_method.is_empty() and n.has_method(fallback_method):
+                        n.call(fallback_method, self)
+
 
 func _resolve_mods_root() -> String:
         var exe_dir := OS.get_executable_path().get_base_dir()
@@ -65,10 +73,9 @@ func _resolve_mods_root() -> String:
 
 
 # --- loose scripts (plugins) ----------------------------------------------------
-# Every .gd file in MachinePartyModLoader/plugins loads automatically - no mod.json needed. Scripts that
-# extend Node start like mods; anything else is just compiled and registered.
-
-var gd_root: String = ""
+# Every .gd file in MachinePartyModLoader/plugins loads automatically.
+# Plugins are tracked separately from mods. Scripts that extend Node are started;
+# anything else is just compiled and registered.
 
 func _resolve_gd_root() -> String:
         if not gd_root.is_empty():
@@ -82,6 +89,7 @@ func _resolve_gd_root() -> String:
                 gd_root = "user://plugins"
         return gd_root
 
+
 func _gd_files(dir: String, out: Array) -> void:
         var d := DirAccess.open(dir)
         if d == null:
@@ -93,36 +101,51 @@ func _gd_files(dir: String, out: Array) -> void:
                 if not sub.begins_with("."):
                         _gd_files(dir.path_join(sub), out)
 
+
 func _start_loose() -> void:
         var root := _resolve_gd_root()
         var files: Array = []
         _gd_files(root, files)
         files.sort()
+
         for path in files:
                 var stem: String = str(path).get_file().get_basename()
-                if _by_id.has(stem):
-                        note("skip loose script %s: name already used by a mod" % stem)
+                if _by_id.has(stem) or _plugins_by_id.has(stem):
+                        note("skip loose plugin %s: name already in use" % stem)
                         continue
+
                 var s := compile(str(path))
                 if s == null:
-                        note("skip loose script: %s failed to compile" % stem)
+                        note("skip loose plugin: %s failed to compile" % stem)
                         continue
-                if not ClassDB.is_parent_class(s.get_instance_base_type(), &"Node"):
-                        note("registered loose script %s (not a Node, not started)" % stem)
-                        continue
-                var n := Node.new()
-                n.set_script(s)
-                mods.append({
+
+                var plugin := {
                         "id": stem,
                         "name": stem,
                         "version": "loose",
                         "dir": str(path).get_base_dir(),
-                        "node": n,
-                })
-                _by_id[stem] = mods.back()
-                if n.has_method("_mod_init"):
+                        "script": s,
+                        "node": null,
+                }
+
+                plugins.append(plugin)
+                _plugins_by_id[stem] = plugin
+
+                if not ClassDB.is_parent_class(s.get_instance_base_type(), &"Node"):
+                        note("registered loose plugin %s (not a Node, not started)" % stem)
+                        continue
+
+                var n := Node.new()
+                n.set_script(s)
+                plugin["node"] = n
+
+                if n.has_method("_plugin_init"):
+                        n.call("_plugin_init", self)
+                elif n.has_method("_mod_init"):
+                        # Backwards compatibility for loose scripts using the old callback.
                         n.call("_mod_init", self)
-                note("loaded loose script %s" % stem)
+
+                note("loaded loose plugin %s" % stem)
 
 
 func _discover() -> void:
@@ -186,8 +209,7 @@ func _has_id(arr: Array, id: String) -> bool:
 
 
 # --- zip mods ----------------------------------------------------------------
-# The zip needs a mod.json at its root ("mod.json") or inside one wrapping
-# folder ("ModName-main/mod.json", like a "Download ZIP" from a git host).
+# The zip needs a mod.json at its root ("mod.json").
 # Everything else (entry script, other files) is resolved relative to that
 # folder. The reader stays open so scripts inside the zip can be compiled at
 # any time via compile() / register_script() / override_script().
@@ -206,6 +228,7 @@ func _zip_base(z: ZIPReader) -> String:
                         best_depth = depth
                         best = "" if p == "mod.json" else p.substr(0, p.length() - "mod.json".length())
         return best
+
 
 func _zip_mod(zip_path: String) -> Dictionary:
         var zip_name := zip_path.get_file()
@@ -245,6 +268,7 @@ func _zip_mod(zip_path: String) -> Dictionary:
                 "node": null,
         }
 
+
 func _zip_read(path: String) -> String:
         # Resolves "<zip>/inner/path.gd" (the shape dir_of() + path_join() produce
         # for zip mods) against the open reader, honouring the wrapping folder.
@@ -270,6 +294,7 @@ func _zip_read(path: String) -> String:
                                 return z.read_file(str(c)).get_string_from_utf8()
                 return ""
         return ""
+
 
 func _start_mods() -> void:
         var present := {}
@@ -318,6 +343,7 @@ func compile(path: String) -> GDScript:
                 return null
         return s
 
+
 func override_script(vanilla_path: String, mod_script_path: String) -> GDScript:
         if not ResourceLoader.exists(vanilla_path):
                 note("no vanilla script at " + vanilla_path)
@@ -330,19 +356,23 @@ func override_script(vanilla_path: String, mod_script_path: String) -> GDScript:
         note("override %s <- %s" % [vanilla_path, mod_script_path])
         return s
 
+
 func override_script_rel(mod_id: String, vanilla_path: String, rel: String) -> GDScript:
         var d := dir_of(mod_id)
         if d.is_empty():
                 return null
         return override_script(vanilla_path, d.path_join(rel))
 
+
 func dir_of(mod_id: String) -> String:
         if _by_id.has(mod_id):
                 return str(_by_id[mod_id]["dir"])
         return ""
 
+
 func has_mod(mod_id: String) -> bool:
         return _by_id.has(mod_id)
+
 
 func mod_list() -> Array:
         var out: Array = []
@@ -350,8 +380,38 @@ func mod_list() -> Array:
                 out.append("%s v%s" % [m["id"], m["version"]])
         return out
 
+
 func open_mods_folder() -> void:
         OS.shell_open(ProjectSettings.globalize_path(mods_root))
+
+
+# --- plugin API --------------------------------------------------------------
+
+func has_plugin(plugin_id: String) -> bool:
+        return _plugins_by_id.has(plugin_id)
+
+
+func plugin_list() -> Array:
+        var out: Array = []
+        for plugin in plugins:
+                out.append(str(plugin["id"]))
+        return out
+
+
+func plugin_dir_of(plugin_id: String) -> String:
+        if _plugins_by_id.has(plugin_id):
+                return str(_plugins_by_id[plugin_id]["dir"])
+        return ""
+
+
+func plugin_script(plugin_id: String) -> GDScript:
+        if _plugins_by_id.has(plugin_id):
+                return _plugins_by_id[plugin_id].get("script") as GDScript
+        return null
+
+
+func open_plugins_folder() -> void:
+        OS.shell_open(ProjectSettings.globalize_path(_resolve_gd_root()))
 
 
 # --- API v2: asset packs ----------------------------------------------------
@@ -550,13 +610,17 @@ func loader_version() -> String:
 func has_api(n) -> bool:
         if n is int:
                 return API_VERSION >= int(n)
-        return API_NAMES.has(String(n))
+
+        var api_name := String(n)
+        # Public methods are the API registry: no duplicate name list to maintain.
+        return has_method(api_name)
 
 
 func note(msg: String) -> void:
         var line := "[modloader] " + msg
         print(line)
         _log.append(line)
+
 
 func _flush_log() -> void:
         var game_dir := OS.get_executable_path().get_base_dir()
@@ -566,7 +630,6 @@ func _flush_log() -> void:
 
         var log_path := log_dir.path_join("modloader.log")
         var f := FileAccess.open(log_path, FileAccess.WRITE)
-
         if f:
                 f.store_string("\n".join(_log))
                 f.close()

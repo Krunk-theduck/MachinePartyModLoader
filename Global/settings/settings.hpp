@@ -7,7 +7,7 @@
 
 #define MPML_SETTINGS(Setting) \
     Setting(bool, console, false) \
-    Setting(bool, logging, true) 
+    Setting(bool, logging, false) 
 
 namespace mpml::settings {
 

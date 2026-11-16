@@ -12,7 +12,6 @@
 #include <miniz.h>
 
 #include "util/util.hpp"
-#include "version.h"
 
 namespace mpml {
 namespace gd {
@@ -547,7 +546,7 @@ void checkZip(const asp::fs::Path& zipPath, const asp::fs::Path& cacheDir, bool 
     if (useCache) {
         const uint64_t h = util::hashFile(zipPath);
         if (h != 0) {
-            key = std::string(kVersion) + "-" + hex16(h);
+            key = std::string(MPML_VERSION) + "-" + hex16(h);
             const asp::fs::Path cp = cdir / (key + ".zipcheck");
             std::vector<FileResult> replay;
             if (cp.isFile() && loadZipCached(cp, replay)) {
@@ -633,7 +632,7 @@ static void checkOneFile(const asp::fs::Path& f, const asp::fs::Path& cdir, bool
     if (useCache) {
         const uint64_t h = util::hashFile(f);
         if (h != 0) {
-            cacheKey = std::string(kVersion) + "-" + hex16(h);
+            cacheKey = std::string(MPML_VERSION) + "-" + hex16(h);
             const asp::fs::Path cp = cdir / (cacheKey + ".check");
             if (cp.isFile() && loadCached(cp, r.diags)) {
                 r.cached = true;
@@ -688,7 +687,7 @@ int CheckRoots(const std::vector<asp::fs::Path>& roots, const asp::fs::Path& cac
     }
 
     int errors = 0, warnings = 0, cached = 0;
-    std::string report = "MPML .gd compile check (loader v" + std::string(kVersion) + ")\n";
+    std::string report = "MPML .gd compile check (loader v" + std::string(MPML_VERSION) + ")\n";
     for (const FileResult& r : all) {
         int e = 0, w = 0;
         for (const Diag& d : r.diags) (d.error ? e : w) += 1;

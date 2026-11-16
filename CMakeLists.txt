@@ -1,6 +1,30 @@
 cmake_minimum_required(VERSION 3.24)
 project(MPML C CXX)
 
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/version.txt" MPML_VERSION_LINES)
+
+foreach(LINE IN LISTS MPML_VERSION_LINES)
+    if(LINE MATCHES "^Version *= *\"([^\"]+)\"$")
+        set(kMPLLoader "${CMAKE_MATCH_1}")
+    elseif(LINE MATCHES "^API *= *\"([^\"]+)\"$")
+        set(kMPMLApiVersion "${CMAKE_MATCH_1}")
+    endif()
+endforeach()
+
+if(NOT DEFINED kMPLLoader OR NOT DEFINED kMPMLApiVersion)
+    message(FATAL_ERROR "Missing MPML_VERSION or MPML_APIVERISON in version.txt")
+endif()
+
+set(MPML_VER_DOT "${kMPLLoader}.0.0.0")
+string(REPLACE "." "," MPML_VER_COMMA "${MPML_VER_DOT}")
+
+add_compile_definitions(
+    MPML_VERSION="${kMPLLoader}"
+    MPML_API_VERSION="${kMPMLApiVersion}"
+    MPML_VERSION_DOT="${MPML_VER_DOT}"
+    MPML_VERSION_COMMA=${MPML_VER_COMMA}
+)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -42,23 +66,13 @@ else()
   target_compile_options(mpml_warnings INTERFACE -Wall -Wextra)
 endif()
 
-add_subdirectory(Global)  # mpml_util + mpml_settings + mpml_logger
+add_subdirectory(global)  # mpml_util + mpml_settings + mpml_logger + mpml_dirs
 add_subdirectory(patch)   # mpml core (patcher, pck, gd check)
 add_subdirectory(main)    # launcher
+
 if(WIN32)
   add_subdirectory(proxy) # winmm.dll proxy (MinHook CreateFileW redirect)
 endif()
-
-# The version lives in exactly one place (mpml::kVersion in patch/version.h);
-# regenerate the Windows version resources from it on every configure.
-file(READ "${CMAKE_CURRENT_SOURCE_DIR}/patch/version.h" MPML_VERSION_H)
-string(REGEX MATCH "kVersion\\[\\] *= *\"([0-9]+)\"" MPML_VER_MATCH "${MPML_VERSION_H}")
-if(NOT CMAKE_MATCH_1)
-  message(FATAL_ERROR "cannot read the loader version from patch/version.h")
-endif()
-set(MPML_VER "${CMAKE_MATCH_1}")
-set(MPML_VER_DOT "${MPML_VER}.0.0.0")
-string(REPLACE "." "," MPML_VER_COMMA "${MPML_VER_DOT}")
 
 set(MPML_DESC "Machine Party mod loader")
 set(MPML_ORIG "MachinePartyModLoader.exe")

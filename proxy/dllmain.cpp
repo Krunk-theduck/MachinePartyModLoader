@@ -20,7 +20,7 @@
 #include "patch.h"
 #include "settings/settings.hpp"
 #include "util/util.hpp"
-#include "Dirs/paths.hpp"
+#include "directories/paths.hpp"
 
 extern "C" BOOL InitializeProxy();
 
@@ -32,8 +32,6 @@ CreateFileW_t g_realCreateFileW = nullptr;
 std::wstring g_originalFull; // normalized absolute path of the game's pck (no \\?\ prefix)
 std::wstring g_moddedFull;   // absolute path of the modded copy
 logger g_log;
-volatile LONG g_pckOpens = 0;
-volatile LONG g_writeLogs = 0;
 
 // windows WideChars are weird, this fixes that
 std::string Narrow(const wchar_t *w) {
@@ -43,6 +41,10 @@ std::string Narrow(const wchar_t *w) {
         std::string s(size_t(n - 1), '\0');
         WideCharToMultiByte(CP_UTF8, 0, w, -1, s.data(), n, nullptr, nullptr);
         return s;
+}
+// windows Widen are weird
+std::wstring Widen(const std::string& str) {
+    return std::wstring(str.begin(), str.end());
 }
 
 void Log(const std::string &s) { g_log.log(s); }
@@ -70,14 +72,7 @@ HANDLE WINAPI HookedCreateFileW(LPCWSTR name, DWORD access, DWORD share, LPSECUR
         if (name && !writing && EndsWithPck(name)) {
                 std::wstring full = FullPath(name);
                 redirect = !full.empty() && _wcsicmp(full.c_str(), g_originalFull.c_str()) == 0;
-                LONG n = InterlockedIncrement(&g_pckOpens);
-                if (n <= 3 || (redirect && n % 500 == 0))
-                        Log(".pck open #" + std::to_string(n) + ": " + Narrow(name) + (redirect ? "  -> redirected to modded" : "  (modded/other, passed through)"));
-                if (redirect)
-                        name = g_moddedFull.c_str();
-        } else if (name && writing && InterlockedCompareExchange(&g_writeLogs, 0, 0) < 20) {
-                InterlockedIncrement(&g_writeLogs);
-                Log(std::string("game writes: ") + Narrow(name));
+                if (redirect) name = g_moddedFull.c_str();
         }
         return g_realCreateFileW(name, access, share, sa, disposition, flags, tmpl);
 }
@@ -125,7 +120,13 @@ void EnableConsole() {
         if (!freopen("CONOUT$", "w", stderr))
                 return;
         (void)freopen("CONIN$", "r", stdin);
-        SetConsoleTitleW(L"Machine Party mod loader");
+
+        std::wstring title = L"Machine Party Console | Mod Loader v";
+        title += Widen(MPML_VERSION);
+        title += L"  |  API v";
+        title += Widen(MPML_API_VERSION);
+
+        SetConsoleTitleW(title.c_str());
 }
 
 void Run() {
@@ -150,7 +151,7 @@ void Run() {
                 Log("patching failed, starting vanilla: " + r.message);
                 return;
         }
-        EnsureLoaderFolders(util::parentOf(paths->original), Log);
+        dirs::AddFolders(util::parentOf(paths->original), Log);
 
         g_originalFull = paths->original.native();
         g_moddedFull = paths->modded.native();

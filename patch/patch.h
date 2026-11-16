@@ -9,6 +9,7 @@
 #include <string>
 
 #include <asp/fs.hpp>
+#include "util/util.hpp"
 
 namespace mpml {
 
@@ -17,7 +18,7 @@ struct Error : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-using LogFn = std::function<void(const std::string&)>;
+
 
 struct Paths {
     asp::fs::Path original; // e.g. "Machine Party.pck"     (never touched)
