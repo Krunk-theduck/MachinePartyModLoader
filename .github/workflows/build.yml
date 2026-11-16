@@ -15,9 +15,8 @@ jobs:
             name: windows-x64
             architecture: x64
 
-          - os: macos-latest
-            name: macos-arm64
-            architecture: ""
+          - os: macos-15
+            name: macos
 
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
