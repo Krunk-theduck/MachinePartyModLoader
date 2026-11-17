@@ -1,4 +1,4 @@
-// version.dll proxy. Windows loads this instead of the system version.dll because it
+// winmm.dll proxy. Windows loads this instead of the system version.dll because it
 // sits next to the game exe, i.e. before Godot's code runs.
 //
 //   Make sure <game>.modded.pck is a current patched copy of the game's pck

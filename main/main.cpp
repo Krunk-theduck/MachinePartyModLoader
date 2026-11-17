@@ -9,7 +9,7 @@
 //
 //   MachinePartyModLoader                 patch now (standalone), create mods/ + gd/
 //   MachinePartyModLoader --play          ...and then start the game
-//   MachinePartyModLoader --compile [p]   compile-check .gd scripts (gd/ + mods/,
+//   MachinePartyModLoader --compile [p]   compile-check .gd scripts (plugins/ + mods/,
 //                                         or one file/folder/zip), exit 1 on errors
 //   MachinePartyModLoader --uninstall     delete the modded pck + record
 #include <algorithm>
@@ -223,7 +223,7 @@ int main(int argc, char** argv) {
         if (compileTarget) {
             roots.push_back(*compileTarget);
         } else {
-            roots.push_back(gameDir / "gd");
+            roots.push_back(dirs::plugins(gameDir));
             roots.push_back(gameDir / "mods");
         }
         const int errors = gd::CheckRoots(roots, mpml::dirs::cache(gameDir), Log, !compileTarget, true);

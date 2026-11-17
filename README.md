@@ -63,7 +63,7 @@ The loader stores its logs and config inside a dedicated subfolder next to the g
 
 ```ini
 # Windows only: opens a live debug console window alongside the game
-console = false
+console = true
 
 ```
 
@@ -161,24 +161,45 @@ func _mod_init(loader) -> void:
 
 The loader is injected as an autoload singleton and passed directly into mod initialization and ready functions.
 
-### Core Methods
+## Loader API (what `loader` gives you)
+Mod entry points: `_mod_init(loader)` (before the game exists - do overrides
+here) and `_mod_ready(loader)` (scene tree alive - safe to touch nodes).
 
-* `loader.note(text)`: Prints messages to the console and log files.
-* `loader.compile(abs_path)`: Compiles a loose script file into a usable script object.
-* `loader.override_script(res_path, abs_path)`: Swaps a vanilla script with an external file.
-* `loader.override_script_rel(id, res_path, rel)`: Same as above, relative to your mod folder.
-* `loader.dir_of(id)`: Returns the folder path or zip path for a mod.
-* `loader.has_mod(id)`: Returns true if the specified mod is loaded.
-* `loader.mod_list()`: Returns a list of all loaded mods.
-* `loader.open_mods_folder()`: Opens the mods directory in your operating system file manager.
+Plugin entry point: `_plugin_init(loader)`
+and `_plugin_ready(loader)`
 
-### API Level Additions
+|Call|Does|
+|-|-|
+|`loader.note(text)`|print + write to `MachinePartyModLoader/logs/modloader.log`|
+|`loader.compile(abs_path)`|turn a loose `.gd` file into a usable script|
+|`loader.override_script(res_path, abs_path)`|swap a vanilla script|
+|`loader.override_script_rel(id, res_path, rel)`|same, relative to your mod folder|
+|`loader.dir_of(id)`|that mod's folder|
+|`loader.has_mod(id)`|is another mod present|
+|`loader.mod_list()`|every mod loaded|
+|`loader.open_mods_folder()`|pop the folder open in the file manager|
 
-* `loader.mount_assets(id, rel)`: Mounts a zip or pack archive so its resources load properly.
-* `loader.register_autoload(name, id, rel)`: Registers a script as an autoload singleton.
-* `loader.register_global_class(cls, id, rel)`: Registers a global class name for other scripts.
-* `loader.register_script(id, rel, res_id)`: Exposes a script at a specific resource path.
-* `loader.registry(name)`: Returns a shared named dictionary for cross mod communication.
+**Loader v3** (API level 2 - all additive, so older mods keep working unchanged). Feature-detect with `loader.has_api("mount_assets")` or `loader.api_version() >= 2` before calling:
+
+|Call|Does|
+|-|-|
+|`loader.mount_assets(id, rel)`|mount a `.zip`/`.pck` resource pack shipped inside your mod, so its `res://` assets load|
+|`loader.register_autoload(name, id, rel)`|register one of your scripts as an autoload singleton|
+|`loader.register_global_class(cls, id, rel)`|register a `class_name` global so other scripts can reference it|
+|`loader.register_script(id, rel, res_id)`|expose a script at a chosen `res://` path|
+|`loader.on_scene_script(cb)` / `on_node_added(cb)` / `on_main_menu(cb)` / `on_lobby(cb)`|shared lifecycle hooks — one callback list every mod shares, instead of each mod racing its own `SceneTree` watcher|
+|`loader.is_local_couch()` / `loader.game_mode()`|is the game in v2's local shared-screen couch mode; `"local"` / `"networked"` / `""`|
+|`loader.registry(name)`|a shared, named `Dictionary` for cross-mod coordination|
+|`loader.api_version()` / `loader.loader_version()` / `loader.has_api(n)`|feature/version numbers and capability detection|
+
+
+**New in loader v4** (API level 3 - mostly additive however logging has changed however, older mods should keep working unchanged). Feature-detect with `loader.has_api("has_plugin")` or `loader.api_version() >= 3` before calling:
+|Call|Does|
+|-|-|
+|`loader.modID`| is a string with the mod id|
+|`loader.has_plugin(name)`|is this plugin present|
+|`loader.plugin_list()`|every plugin loaded|
+|`loader.open_plugins_folder()`|pop the folder open in the file manager|
 
 ---
 
@@ -186,7 +207,7 @@ The loader is injected as an autoload singleton and passed directly into mod ini
 
 ### Versioning
 
-The loader version is defined in a single header file. During compilation, placeholders in the bootstrap script are automatically updated, and CMake regenerates version resources so executable properties always match the loader version.
+The loader version is defined in a single text file. During compilation, placeholders in the bootstrap script are automatically updated, and CMake regenerates version resources so executable properties always match the loader version.
 
 ### Windows Compilation
 

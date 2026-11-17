@@ -3,6 +3,7 @@ extends Node
 const TOGGLE_KEY := KEY_QUOTELEFT
 
 var _loader
+var _commands: Dictionary
 var _layer: CanvasLayer
 var _panel: PanelContainer
 var _log: RichTextLabel
@@ -13,6 +14,7 @@ var _prev_mouse_mode := Input.MOUSE_MODE_VISIBLE
 
 func _mod_init(loader) -> void:
 	_loader = loader
+	_commands = loader.registry(loader.modID)
 	loader.note("console mod init")
 
 
@@ -20,6 +22,10 @@ func _mod_ready(loader) -> void:
 	loader.note("console mod ready")
 	_build_ui()
 	_print("debug console ready — press ~ to toggle, 'help' for commands")
+
+
+func print_line(line: String) -> void:
+	_print(line)
 
 
 func _build_ui() -> void:
@@ -111,6 +117,65 @@ func _on_submit(text: String) -> void:
 		_inputEdit.grab_focus()
 
 
+func _find_custom(cmd: String) -> Variant:
+	if _commands.has(cmd):
+		return _commands[cmd]
+	for key in _commands:
+		if str(key).to_lower() == cmd:
+			return _commands[key]
+	return null
+
+
+func _entry_callable(entry: Variant) -> Callable:
+	if entry is Callable:
+		return entry
+	if entry is Dictionary:
+		var cb = entry.get("run", null)
+		if cb is Callable:
+			return cb
+	return Callable()
+
+
+func _entry_help(entry: Variant) -> String:
+	if entry is Dictionary:
+		return str(entry.get("help", ""))
+	return ""
+
+
+func _run_custom(cmd: String, args: Array) -> bool:
+	var entry = _find_custom(cmd)
+	if entry == null:
+		return false
+
+	var cb := _entry_callable(entry)
+	if not cb.is_valid():
+		_print("command '%s' is registered but its callable is no longer valid" % cmd)
+		return true
+
+	var result = cb.call(args)
+	if result != null and str(result) != "":
+		_print(str(result))
+	return true
+
+
+func _print_custom_help() -> void:
+	if _commands.is_empty():
+		return
+
+	_print("Custom commands:")
+	var names: Array = _commands.keys()
+	names.sort()
+	for key in names:
+		var entry = _commands[key]
+		if not _entry_callable(entry).is_valid():
+			continue
+		var help := _entry_help(entry)
+		if help.is_empty():
+			_print("  %s" % str(key))
+		else:
+			_print("  %-21s - %s" % [str(key), help])
+
+
 func _run(line: String) -> void:
 	var parts := line.split(" ", false)
 	if parts.is_empty():
@@ -133,6 +198,7 @@ func _run(line: String) -> void:
 			_print("  open_plugins          - open the plugins folder")
 			_print("  version               - show loader and API versions")
 			_print("  clear                 - clear console output")
+			_print_custom_help()
 
 		"mods":
 			var list: Array = _loader.mod_list()
@@ -193,7 +259,8 @@ func _run(line: String) -> void:
 			_log.clear()
 
 		_:
-			_print("unknown command: " + cmd + " (try 'help')")
+			if not _run_custom(cmd, args):
+				_print("unknown command: " + cmd + " (try 'help')")
 
 
 func _print(line: String) -> void:
